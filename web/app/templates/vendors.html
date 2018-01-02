@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% if form %}
+<h1>New Vendor:</h1>
+<p>
+    <form action="" method="post">
+        {{ form.hidden_tag() }}
+        <p>
+            {{ form.name.label }}<br>
+            {{ form.name(size=32) }}<br>
+            {% for error in form.name.errors %}
+            <span style="color: red;">[{{ error }}]</span>
+            {% endfor %}
+        </p>
+        <p>
+            {{ form.website.label }}<br>
+            {{ form.website(size=32) }}<br>
+            {% for error in form.website.errors %}
+            <span style="color: red;">[{{ error }}]</span>
+            {% endfor %}
+        </p>
+        <p>
+            {{ form.image_url.label }}<br>
+            {{ form.image_url(size=32) }}<br>
+            {% for error in form.image_url.errors %}
+            <span style="color: red;">[{{ error }}]</span>
+            {% endfor %}
+        </p>
+        <p>{{ form.submit() }}</p>
+    </form>
+</p>
+{% endif %}
+
+<table>
+    {% for vendor in vendors %}
+    <tr valign="top">
+        <td>
+            <a href="{{ vendor.website }}" alt="No logo">
+                <img src="{{ vendor.image_url }}" height="100" style="border-style: solid; border-color: blue; border-width: 1px">
+            </a>
+        </td>
+        <td>
+            <b>{{ vendor.name }}</b><br>
+            <a href="{{ vendor.website }}">{{ vendor.website }}</a><br>
+            <a href="{{ url_for('edit_vendor', vendor_id=vendor.id) }}">Edit</a>
+        </td>
+    </tr>
+    {% else %}
+    <tr>
+        <td>No vendors to show.</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endblock %}

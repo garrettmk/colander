@@ -1,0 +1,6 @@
+gunicorn
+flask
+flask-wtf
+flask-login
+flask-sqlalchemy
+flask-migrate
