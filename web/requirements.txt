@@ -7,4 +7,5 @@ flask-migrate
 pymysql
 celery
 redis
-
+requests
+lxml

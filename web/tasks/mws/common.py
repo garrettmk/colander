@@ -6,7 +6,7 @@ import os
 import time
 import amazonmws as amz_mws
 
-from app import app
+from app import celery
 from celery.five import monotonic
 
 
@@ -61,7 +61,7 @@ mws_priority_limits = {
 ########################################################################################################################
 
 
-class MWSTask(app.Task):
+class MWSTask(celery.Task):
     """Common behaviors for all MWS API calls."""
     cache_ttl = 30
     default_retry_delay = 5

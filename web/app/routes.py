@@ -1,13 +1,13 @@
-from flask import request, flash, render_template, redirect, url_for
+from flask import request, flash, render_template, redirect, url_for, jsonify
 from flask_login import current_user, login_user, logout_user, login_required
 
-from app import app, db
+from app import app, db, celery
 from app.forms import LoginForm, EditVendorForm, EditQuantityMapForm
 from app.models import User, Vendor, QuantityMap
 
 
 ########################################################################################################################
-
+# Index & user login
 
 @app.route('/')
 @app.route('/index')
@@ -42,6 +42,33 @@ def login():
 def logout():
     logout_user()
     return redirect(url_for('index'))
+
+
+########################################################################################################################
+# Task API
+
+
+@app.route('/api/<path:task>')
+def api_call(task):
+    task_name = task.replace('/', '.')
+    args = [arg for arg, val in request.args.items() if not len(val)]
+    kwargs = {arg: val for arg, val in request.args.items() if arg not in args}
+
+    job = celery.send_task(
+        task_name,
+        args=args,
+        kwargs=kwargs,
+        expires=30
+    )
+
+    try:
+        return jsonify(job.get(timeout=30))
+    except Exception as e:
+        return repr(e)
+
+
+########################################################################################################################
+# Vendors
 
 
 @app.route('/vendors', methods=['GET', 'POST'])
@@ -86,6 +113,10 @@ def edit_vendor(vendor_id):
         return redirect(url_for('vendors'))
 
     return render_template('edit_vendor.html', title='Edit Vendor', form=form)
+
+
+########################################################################################################################
+# Quantity mappings
 
 
 @app.route('/quantitymap', methods=['GET', 'POST'])

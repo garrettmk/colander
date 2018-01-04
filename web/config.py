@@ -8,4 +8,6 @@ class Config:
     SQLALCHEMY_DATABASE_URI = os.environ['DATABASE_URI']
     BROKER_URL = os.environ.get('REDIS_URL', 'redis://')
     CELERY_RESULT_BACKEND = os.environ.get('REDIS_URL', 'redis://')
-
+    CELERY_IMPORTS = [
+        'tasks.mws.products',
+    ]
