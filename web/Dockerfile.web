@@ -1,11 +1,22 @@
 FROM python:latest
+COPY ../lib /lib
 WORKDIR /web
 ADD . /web
 RUN pip install -r requirements.txt
-ENV PYTHONUNBUFFERED=1 PYTHONPATH=/web/lib FLASK_APP=colander.py
+RUN apt-get update && apt-get install -y supervisor
+ENV PYTHONUNBUFFERED=1 PYTHONPATH=/lib FLASK_APP=colander.py
 RUN useradd -m webuser
 USER webuser
+
+# Development:
+ENTRYPOINT ["supervisord"]
+CMD ["-c", "supervisord.conf"]
+# TODO: Create separate conf files for web-only and worker-only modes
+
+# Web only:
 # ENTRYPOINT ["gunicorn"]
 # CMD ["app:app"]
-ENTRYPOINT ["flask"]
-CMD ["run", "-h", "0.0.0.0"]
+
+# Worker only:
+# ENTRYPOINT ["supervisord"]
+# CMD ["-c", "supervisord.conf"]
