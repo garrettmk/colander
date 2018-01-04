@@ -2,8 +2,8 @@ from flask import request, flash, render_template, redirect, url_for
 from flask_login import current_user, login_user, logout_user, login_required
 
 from app import app, db
-from app.forms import LoginForm, EditVendorForm
-from app.models import User, Vendor
+from app.forms import LoginForm, EditVendorForm, EditQuantityMapForm
+from app.models import User, Vendor, QuantityMap
 
 
 ########################################################################################################################
@@ -86,3 +86,45 @@ def edit_vendor(vendor_id):
         return redirect(url_for('vendors'))
 
     return render_template('edit_vendor.html', title='Edit Vendor', form=form)
+
+
+@app.route('/quantitymap', methods=['GET', 'POST'])
+@login_required
+def quantity_map():
+    form = EditQuantityMapForm()
+    if form.validate_on_submit():
+        qmap = QuantityMap(
+            text=form.text.data,
+            quantity=form.quantity.data
+        )
+
+        db.session.add(qmap)
+        db.session.commit()
+        flash(f'New quantity map created: {qmap.text} = {qmap.quantity}')
+        return redirect(url_for('quantity_map'))
+
+    qmaps = QuantityMap.query.order_by(QuantityMap.text.asc()).all()
+    return render_template('quantity_map.html', title='Quantity Maps', form=form, qmaps=qmaps)
+
+
+@app.route('/quantitymap/<qmap_id>', methods=['GET', 'POST'])
+@login_required
+def edit_quantity_map(qmap_id):
+    qmap = QuantityMap.query.filter_by(id=qmap_id).first()
+    if qmap is None:
+        flash(f'Invalid quantity map id: {qmap_id}')
+        return redirect(url_for('quantity_map'))
+
+    form = EditQuantityMapForm(obj=qmap)
+    if form.validate_on_submit() and form.submit.data:
+        form.populate_obj(qmap)
+        db.session.commit()
+        flash(f'Changes saved: {qmap.text} = {qmap.quantity}')
+        return redirect(url_for('quantity_map'))
+    elif form.delete.data:
+        db.session.delete(qmap)
+        db.session.commit()
+        flash(f'Deleted quantity map \"{qmap.text}\"')
+        return redirect(url_for('quantity_map'))
+
+    return render_template('edit_quantity_map.html', totle='Edit Quantity Map', form=form)

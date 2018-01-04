@@ -1,6 +1,7 @@
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import UserMixin
 from app import db, login
+from sqlalchemy import UniqueConstraint
 
 
 ########################################################################################################################
@@ -38,3 +39,35 @@ class Vendor(db.Model):
     name = db.Column(db.String(64), index=True, unique=True)
     website = db.Column(db.String(64), index=True, unique=True)
     image_url = db.Column(db.String(256))
+
+
+########################################################################################################################
+
+
+class QuantityMap(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    text = db.Column(db.String(128), index=True, unique=True)
+    quantity = db.Column(db.Integer)
+
+
+########################################################################################################################
+
+
+class Product(db.Model):
+    __table_args__ = (UniqueConstraint('vendor', 'sku'),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(256), index=True)
+    vendor = db.Column(db.Integer, db.ForeignKey('vendor.id'), nullable=False)
+    sku = db.Column(db.String(64), index=True, nullable=False)
+    detail_url = db.Column(db.String(128))
+    image_url = db.Column(db.String(128))
+    price = db.Column(db.Integer, index=True)
+    quantity = db.Column(db.Integer)
+
+    brand = db.Column(db.String(64), index=True)
+    model = db.Column(db.String(64), index=True)
+    upc = db.Column(db.String(12))
+
+    quantity_desc = db.Column(db.String(64))
+    data = db.Column(db.JSON)

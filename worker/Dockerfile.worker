@@ -1,0 +1,10 @@
+FROM python:latest
+WORKDIR /worker
+ADD . /worker
+RUN apt-get update && apt-get install -y supervisor
+RUN pip install -r requirements.txt
+ENV PYTHONUNBUFFERED=0
+#RUN useradd -m workeruser
+#USER workeruser
+ENTRYPOINT ["supervisord"]
+CMD ["-c", "supervisord.conf"]
