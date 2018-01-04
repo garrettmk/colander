@@ -2,7 +2,7 @@ FROM python:latest
 WORKDIR /web
 ADD . /web
 RUN pip install -r requirements.txt
-ENV PYTHONUNBUFFERED=1 FLASK_APP=colander.py FLASK_DEBUG=1
+ENV PYTHONUNBUFFERED=1 PYTHONPATH=/web/lib FLASK_APP=colander.py
 RUN useradd -m webuser
 USER webuser
 # ENTRYPOINT ["gunicorn"]

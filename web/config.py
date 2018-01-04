@@ -3,7 +3,9 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 
 
 class Config:
-    SECRET_KEY = os.environ.get('FLASK_SECRET_KEY', 'i\'ll never tell')
+    SECRET_KEY = os.environ['FLASK_SECRET_KEY']
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URI', 'mysql+pymysql://root:mysql-password@database:3306/colander')
+    SQLALCHEMY_DATABASE_URI = os.environ['DATABASE_URI']
+    BROKER_URL = os.environ.get('REDIS_URL', 'redis://')
+    CELERY_RESULT_BACKEND = os.environ.get('REDIS_URL', 'redis://')
 
