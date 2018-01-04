@@ -5,8 +5,6 @@ from app import app, db
 from app.forms import LoginForm, EditVendorForm, EditQuantityMapForm
 from app.models import User, Vendor, QuantityMap
 
-from tasks.dummy import dummy_task
-
 
 ########################################################################################################################
 
@@ -132,7 +130,3 @@ def edit_quantity_map(qmap_id):
     return render_template('edit_quantity_map.html', totle='Edit Quantity Map', form=form)
 
 
-@app.route('/task')
-def task():
-    dummy_task.delay('daaaaaanng')
-    return 'done'

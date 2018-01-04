@@ -1,12 +1,9 @@
 FROM python:latest
-COPY ../lib /lib
 WORKDIR /web
 ADD . /web
 RUN pip install -r requirements.txt
 RUN apt-get update && apt-get install -y supervisor
-ENV PYTHONUNBUFFERED=1 PYTHONPATH=/lib FLASK_APP=colander.py
-RUN useradd -m webuser
-USER webuser
+ENV PYTHONUNBUFFERED=1 PYTHONPATH=/web/lib/amazonmws FLASK_APP=colander.py
 
 # Development:
 ENTRYPOINT ["supervisord"]

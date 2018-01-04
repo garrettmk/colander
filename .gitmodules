@@ -1,0 +1,3 @@
+[submodule "web/lib/amazonmws"]
+	path = web/lib/amazonmws
+	url = https://github.com/garrettmk/amazonmws
