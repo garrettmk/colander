@@ -1,7 +1,7 @@
 import re
 from lxml import etree
 
-from app import app
+from app import celery
 
 
 ########################################################################################################################

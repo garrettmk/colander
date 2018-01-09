@@ -1,5 +1,3 @@
-import os
-
 from flask import Flask, has_app_context
 from config import Config
 from flask_sqlalchemy import SQLAlchemy

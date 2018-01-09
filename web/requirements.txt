@@ -9,3 +9,5 @@ celery
 redis
 requests
 lxml
+fuzzywuzzy
+python-Levenshtein

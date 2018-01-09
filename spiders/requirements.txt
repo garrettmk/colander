@@ -1,0 +1,5 @@
+scrapy
+scrapy-redis
+html2text
+redis
+celery

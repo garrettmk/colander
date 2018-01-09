@@ -1,13 +1,12 @@
-import itertools
 from .common import *
-import mws.products as products
-from lib.amazonmws.amazonmws import MARKETID
+import tasks.mws.products as products
+from amazonmws import MARKETID
 
 
 ########################################################################################################################
 
 
-@app.task
+@celery.task
 def GetServiceStatus(**kwargs):
     response = AmzXmlResponse(
         products.GetServiceStatus(**kwargs)
@@ -16,7 +15,7 @@ def GetServiceStatus(**kwargs):
     return response.xpath_get('.//Status')
 
 
-@app.task
+@celery.task
 def ListMatchingProducts(query=None, **kwargs):
     """Perform a ListMatchingProducts request."""
     # Allow two-letter abbreviations for MarketplaceId
@@ -67,7 +66,7 @@ def ListMatchingProducts(query=None, **kwargs):
     return format_parsed_response('ListMatchingProducts', params, results)
 
 
-@app.task
+@celery.task
 def GetMyFeesEstimate(asin=None, price=None, **kwargs):
     """Return the total fees estimate for a given ASIN and price."""
     # Allow two-letter marketplace abbreviations
@@ -102,14 +101,17 @@ def GetMyFeesEstimate(asin=None, price=None, **kwargs):
         sku = response.xpath_get('.//FeesEstimateIdentifier/IdValue', result_tag)
 
         if response.xpath_get('.//Status', result_tag) == 'Success':
-            results[sku] = {'total_fees_estimate': response.xpath_get('.//TotalFeesEstimate/Amount', _type=float)}
+            results[sku] = {
+                'price': price,
+                'total_fees_estimate': response.xpath_get('.//TotalFeesEstimate/Amount', _type=float)
+            }
         else:
             errors[sku] = response.xpath_get('.//Error/Message')
 
     return format_parsed_response('GetMyFeesEstimate', params, results, errors)
 
 
-@app.task
+@celery.task
 def GetCompetitivePricingForASIN(asin=None, **kwargs):
     """Perform a GetCompetivePricingForASIN call and return the results as a simplified JSON dictionary."""
     market_id = kwargs.pop('MarketplaceId', 'US')

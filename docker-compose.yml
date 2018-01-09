@@ -32,3 +32,22 @@ services:
       - database
     env_file:
       - web/.env
+
+  spiders:
+    build:
+      context: spiders
+      dockerfile: Dockerfile.spiders
+    volumes:
+      - ./spiders:/spiders
+    hostname: spiders
+    depends_on:
+      - redis
+      - database
+    links:
+      - redis
+      - database
+    environment:
+      - SPIDER_MAX_ITEMS=50
+    ports:
+      - "6800:6800"
+    command: ["--help"]

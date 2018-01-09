@@ -1,22 +1,22 @@
 from .common import *
-import mws.product_adv as product_adv
-from lib.amazonmws.amazonmws import MARKETID
+import tasks.mws.product_adv as product_adv
+from amazonmws import MARKETID
 
 
 ########################################################################################################################
 
 
-@app.task
+@celery.task
 def ItemSearch(SearchIndex, **kwargs):
     raise NotImplementedError
 
 
-@app.task
+@celery.task
 def BrowseNodeLookup(BrowseNodeId, ResponseGroup=None):
     raise NotImplementedError
 
 
-@app.task
+@celery.task
 def ItemLookup(asin=None, **kwargs):
     params = {
         'ResponseGroup': 'Images,ItemAttributes,OfferFull,SalesRank,EditorialReview',
@@ -42,7 +42,7 @@ def ItemLookup(asin=None, **kwargs):
     for item_tag in response.tree.iterdescendants('Item'):
         product = {}
         product['sku'] = response.xpath_get('.//ASIN', item_tag)
-        product['detail_page_url'] = f'http://www.amazon.com/dp/{product["sku"]}'
+        product['detail_url'] = f'http://www.amazon.com/dp/{product["sku"]}'
         product['rank'] = response.xpath_get('.//SalesRank', item_tag, _type=int)
         product['image_url'] = response.xpath_get('.//LargeImage/URL', item_tag)
         product['brand'] = response.xpath_get('.//Brand', item_tag)\
@@ -71,6 +71,6 @@ def ItemLookup(asin=None, **kwargs):
 
     return format_parsed_response('ItemLookup', params, results, errors)
 
-@app.task
+@celery.task
 def SimilarityLookup(ItemId, **kwargs):
     raise NotImplementedError

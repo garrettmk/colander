@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Opportunities</h1>
+<p>
+<table>
+    <tr>
+        <th>Supply Listing</th>
+        <th></th>
+        <th>Market Listing</th>
+        <th></th>
+        <th>Revenue</th>
+        <th>COGS</th>
+        <th>Profit</th>
+        <th>Margin</th>
+        <th>ROI</th>
+    </tr>
+    {% for opp in opportunities %}
+    <tr>
+        <td>
+            <b>{{ opp.supply.vendor.name }}<br>
+                {{ opp.supply.sku }}</b>
+        </td>
+        <td>
+            {{ opp.supply.title }}<br>
+            {{ as_money(opp.supply.price) }}/{{ opp.supply.quantity }}
+            Shipping: {{ as_percent(opp.supply.vendor.ship_rate) }}
+        </td>
+        <td>
+            <b>{{ opp.market.vendor.name }}<br>
+                {{ opp.market.sku }}</b>
+        </td>
+        <td>
+            {{ opp.market.title }}<br>
+            {{ as_money(opp.market.price) }}/{{ opp.market.quantity }}
+            Market fees: {{ as_money(opp.market.market_fees) }}
+        </td>
+        <td>{{ as_money(opp.revenue) }}</td>
+        <td>{{ as_money(opp.cogs) }}</td>
+        <td>{{ as_money(opp.profit) }}</td>
+        <td>{{ as_percent(opp.margin) }}</td>
+        <td>{{ as_percent(opp.roi) }}</td>
+    </tr>
+    {% endfor %}
+</table>
+</p>
+{% endblock %}

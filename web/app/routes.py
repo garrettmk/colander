@@ -2,8 +2,14 @@ from flask import request, flash, render_template, redirect, url_for, jsonify
 from flask_login import current_user, login_user, logout_user, login_required
 
 from app import app, db, celery
-from app.forms import LoginForm, EditVendorForm, EditQuantityMapForm
-from app.models import User, Vendor, QuantityMap
+from app.forms import LoginForm, EditVendorForm, EditQuantityMapForm, EditProductForm
+from app.models import User, Vendor, QuantityMap, Product, Opportunity
+
+from celery import chain, chord
+from tasks.ops.products import clean_and_import, update_amazon_listing, update_fba_fees, find_amazon_matches,\
+    quantity_map_updated
+from tasks.parsed.products import GetCompetitivePricingForASIN, GetMyFeesEstimate
+from tasks.parsed.product_adv import ItemLookup
 
 
 ########################################################################################################################
@@ -131,6 +137,7 @@ def quantity_map():
 
         db.session.add(qmap)
         db.session.commit()
+        quantity_map_updated.delay(qmap.id)
         flash(f'New quantity map created: {qmap.text} = {qmap.quantity}')
         return redirect(url_for('quantity_map'))
 
@@ -150,6 +157,7 @@ def edit_quantity_map(qmap_id):
     if form.validate_on_submit() and form.submit.data:
         form.populate_obj(qmap)
         db.session.commit()
+        quantity_map_updated.delay(qmap.id)
         flash(f'Changes saved: {qmap.text} = {qmap.quantity}')
         return redirect(url_for('quantity_map'))
     elif form.delete.data:
@@ -158,6 +166,76 @@ def edit_quantity_map(qmap_id):
         flash(f'Deleted quantity map \"{qmap.text}\"')
         return redirect(url_for('quantity_map'))
 
-    return render_template('edit_quantity_map.html', totle='Edit Quantity Map', form=form)
+    return render_template('edit_quantity_map.html', title='Edit Quantity Map', form=form)
 
 
+########################################################################################################################
+# Products
+
+
+@app.route('/products', methods=['GET', 'POST'])
+@login_required
+def products():
+    form = EditProductForm()
+    if form.validate_on_submit():
+        product = Product()
+        form.populate_obj(product)
+        db.session.add(product)
+        db.session.commit()
+
+        if db.session.query(Vendor.name).filter(Vendor.id == form.vendor_id.data).first()[0] == 'Amazon':
+            chain(
+                chord(
+                    (
+                        GetCompetitivePricingForASIN.s(product.sku),
+                        ItemLookup.s(product.sku),
+                    ),
+                    update_amazon_listing.s(product.id)
+                ),
+                update_fba_fees.s()
+            ).apply_async()
+        else:
+            find_amazon_matches.delay(product.id)
+
+        flash(f'Product created: {product.vendor.name} {product.sku}')
+        return redirect(url_for('products'))
+
+    products = Product.query.order_by(Product.vendor_id.asc()).all()
+    return render_template('products.html', title='Products', form=form, products=products)
+
+
+@app.route('/products/<product_id>', methods=['GET', 'POST'])
+@login_required
+def edit_product(product_id):
+    product = Product.query.filter_by(id=product_id).first()
+    if product is None:
+        flash(f'Invalid product id: {product_id}')
+        return redirect(url_for('products'))
+
+    form = EditProductForm(obj=product)
+    if form.validate_on_submit() and form.submit.data:
+        data = form.data
+        data.pop('submit', None)
+        data.pop('delete', None)
+        data.pop('csrf_token', None)
+        clean_and_import(data)
+        flash(f'Changes saved')
+        return redirect(url_for('products'))
+    elif form.delete.data:
+        db.session.delete(product)
+        db.session.commit()
+        flash(f'Product deleted')
+        return redirect(url_for('products'))
+
+    return render_template('edit_product.html', title='Edit Product', form=form)
+
+
+########################################################################################################################
+# Opportunities
+
+
+@app.route('/opportunities')
+@login_required
+def opportunities():
+    opps = Opportunity.query.all()
+    return render_template('opportunities.html', title='Opportunities', opportunities=opps)
