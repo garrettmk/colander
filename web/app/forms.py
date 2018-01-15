@@ -22,7 +22,7 @@ class EditVendorForm(FlaskForm):
     name = StringField('Name', validators=[DataRequired()])
     website = URLField('Website', validators=[DataRequired()])
     image_url = URLField('Image URL')
-    submit = SubmitField('Create Vendor')
+    submit = SubmitField('OK')
     delete = SubmitField('Delete')
 
     def __init__(self, *args, **kwargs):
@@ -83,3 +83,16 @@ class EditProductForm(FlaskForm):
         product = Product.query.filter_by(vendor_id=vendor_id, sku=sku.data).first()
         if product and product != self.edit_product:
             raise ValidationError('Please choose a different vendor or SKU.')
+
+
+class SearchProductsForm(FlaskForm):
+    vendor_id = SelectField('Vendor', coerce=int, validators=[Optional()])
+    text = StringField('Text', validators=[Optional()])
+    search_sku = BooleanField('SKU')
+    search_title = BooleanField('Title')
+    search_desc = BooleanField('Description')
+    submit = SubmitField('Search')
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.vendor_id.choices = [(v.id, v.name) for v in Vendor.query.order_by(Vendor.name.asc()).all()]

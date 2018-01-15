@@ -41,6 +41,7 @@ class FlaskCelery(Celery):
 
 app = Flask(__name__)
 app.config.from_object(Config)
+app.jinja_env.add_extension('jinja2.ext.do')
 
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)

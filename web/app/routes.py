@@ -2,7 +2,7 @@ from flask import request, flash, render_template, redirect, url_for, jsonify
 from flask_login import current_user, login_user, logout_user, login_required
 
 from app import app, db, celery
-from app.forms import LoginForm, EditVendorForm, EditQuantityMapForm, EditProductForm
+from app.forms import LoginForm, EditVendorForm, EditQuantityMapForm, EditProductForm, SearchProductsForm
 from app.models import User, Vendor, QuantityMap, Product, Opportunity
 
 from celery import chain, chord
@@ -47,7 +47,7 @@ def login():
 @app.route('/logout')
 def logout():
     logout_user()
-    return redirect(url_for('index'))
+    return redirect(url_for('login'))
 
 
 ########################################################################################################################
@@ -77,9 +77,24 @@ def api_call(task):
 # Vendors
 
 
-@app.route('/vendors', methods=['GET', 'POST'])
+@app.route('/vendors')
 @login_required
 def vendors():
+    """The top-level Vendor index."""
+    product_count = Product.query.count()
+    vendors = Vendor.query.order_by(Vendor.name.asc()).all()
+    return render_template(
+        'vendors.html',
+        title='Vendors',
+        vendors=vendors,
+        product_count=product_count
+    )
+
+
+@app.route('/vendors/create', methods=['GET', 'POST'])
+@login_required
+def new_vendor_form():
+    """Renders the vendor creation form."""
     form = EditVendorForm()
     if form.validate_on_submit():
         vendor = Vendor(
@@ -90,35 +105,51 @@ def vendors():
 
         db.session.add(vendor)
         db.session.commit()
-
         flash(f'Vendor \"{vendor.name}\" created successfully.')
-        return redirect(url_for('vendors'))
+        return jsonify(status='ok')
 
-    vendors = Vendor.query.order_by(Vendor.name.asc()).all()
-    return render_template('vendors.html', title='Vendors', form=form, vendors=vendors)
+    return render_template('forms/vendor.html', title="New Vendor", form=form)
 
 
-@app.route('/vendors/<vendor_id>', methods=['GET', 'POST'])
+@app.route('/vendors/edit/<vendor_id>', methods=['GET', 'POST'])
 @login_required
-def edit_vendor(vendor_id):
-    vendor = Vendor.query.filter_by(id=vendor_id).first()
-    if vendor is None:
-        flash(f'Invalid vendor id: {vendor_id}')
-        return redirect(url_for('vendors'))
-
+def edit_vendor_form(vendor_id):
+    """Renders the Edit Vendor form."""
+    vendor = Vendor.query.filter_by(id=vendor_id).first_or_404()
     form = EditVendorForm(obj=vendor)
-    if form.validate_on_submit() and form.submit.data:
+    if form.validate_on_submit():
         form.populate_obj(vendor)
         db.session.commit()
         flash(f'Changes saved')
-        return redirect(url_for('vendors'))
-    elif form.delete.data:
-        db.session.delete(vendor)
-        db.session.commit()
-        flash(f'Vendor \"{vendor.name}\" deleted.')
-        return redirect(url_for('vendors'))
+        return jsonify(status='ok')
 
-    return render_template('edit_vendor.html', title='Edit Vendor', form=form)
+    return render_template('forms/vendor.html', title="Edit Vendor", form=form)
+
+
+@app.route('/vendors/delete', methods=['POST'])
+@login_required
+def delete_vendor():
+    """Delete a vendor."""
+    print(request.form)
+    vendor = Vendor.query.filter_by(id=request.form['vendor_id']).first_or_404()
+    db.session.delete(vendor)
+    db.session.commit()
+    flash(f'Vendor \"{vendor.name}\" deleted.')
+    return 'ok'
+
+
+@app.route('/vendors/<vendor_id>')
+@login_required
+def vendor_details(vendor_id):
+    """Display a vendor's detail page."""
+    vendor = Vendor.query.filter_by(id=vendor_id).first_or_404()
+    page_num = request.args.get('page', 1, type=int)
+    product_page = vendor.products.paginate(page_num, app.config['MAX_PAGE_ITEMS'], False)
+    return render_template(
+        'vendor_details.html',
+        vendor=vendor,
+        product_page=product_page
+    )
 
 
 ########################################################################################################################
@@ -176,32 +207,39 @@ def edit_quantity_map(qmap_id):
 @app.route('/products', methods=['GET', 'POST'])
 @login_required
 def products():
-    form = EditProductForm()
-    if form.validate_on_submit():
-        product = Product()
-        form.populate_obj(product)
-        db.session.add(product)
-        db.session.commit()
+    # form = EditProductForm()
+    # if form.validate_on_submit():
+    #     product = Product()
+    #     form.populate_obj(product)
+    #     db.session.add(product)
+    #     db.session.commit()
+    #
+    #     if db.session.query(Vendor.name).filter(Vendor.id == form.vendor_id.data).first()[0] == 'Amazon':
+    #         chain(
+    #             chord(
+    #                 (
+    #                     GetCompetitivePricingForASIN.s(product.sku),
+    #                     ItemLookup.s(product.sku),
+    #                 ),
+    #                 update_amazon_listing.s(product.id)
+    #             ),
+    #             update_fba_fees.s()
+    #         ).apply_async()
+    #     else:
+    #         find_amazon_matches.delay(product.id)
+    #
+    #     flash(f'Product created: {product.vendor.name} {product.sku}')
+    #     return redirect(url_for('products'))
 
-        if db.session.query(Vendor.name).filter(Vendor.id == form.vendor_id.data).first()[0] == 'Amazon':
-            chain(
-                chord(
-                    (
-                        GetCompetitivePricingForASIN.s(product.sku),
-                        ItemLookup.s(product.sku),
-                    ),
-                    update_amazon_listing.s(product.id)
-                ),
-                update_fba_fees.s()
-            ).apply_async()
-        else:
-            find_amazon_matches.delay(product.id)
-
-        flash(f'Product created: {product.vendor.name} {product.sku}')
-        return redirect(url_for('products'))
-
-    products = Product.query.order_by(Product.vendor_id.asc()).all()
-    return render_template('products.html', title='Products', form=form, products=products)
+    page_num = request.args.get('page', 1, type=int)
+    products = Product.query.order_by(Product.title.asc()).paginate(page_num, app.config['MAX_PAGE_ITEMS'], False)
+    product_count = Product.query.count()
+    return render_template(
+        'products.html',
+        title='Products',
+        products=products,
+        product_count=product_count
+    )
 
 
 @app.route('/products/<product_id>', methods=['GET', 'POST'])

@@ -1,104 +1,49 @@
-{% extends "base.html" %}
+{% extends "toplevel_base.html" %}
 
-{% block content %}
-{% if form %}
-<h1>New Product:</h1>
-<p>
-    <form action="" method="post">
-        {{ form.hidden_tag() }}
-        <p>
-            {{ form.vendor_id.label }}<br>
-            {{ form.vendor_id }}<br>
-            {% for error in form.vendor_id.errors %}
-            <span style="color: red;">[{{ error }}]</span>
-            {% endfor %}
-        </p>
-        <p>
-            {{ form.sku.label }}<br>
-            {{ form.sku(size=32) }}<br>
-            {% for error in form.sku.errors %}
-            <span style="color: red;">[{{ error }}]</span>
-            {% endfor %}
-        </p>
-        <p>
-            {{ form.title.label }}<br>
-            {{ form.title(size=32) }}<br>
-            {% for error in form.title.errors %}
-            <span style="color: red;">[{{ error }}]</span>
-            {% endfor %}
-        </p>
-        <p>
-            {{ form.detail_url.label }}<br>
-            {{ form.detail_url(size=32) }}<br>
-            {% for error in form.detail_url.errors %}
-            <span style="color: red;">[{{ error }}]</span>
-            {% endfor %}
-        </p>
-        <p>
-            {{ form.image_url.label }}<br>
-            {{ form.image_url(size=32) }}<br>
-            {% for error in form.image_url.errors %}
-            <span style="color: red;">[{{ error }}]</span>
-            {% endfor %}
-        </p>
-        <p>
-            {{ form.quantity.label }}<br>
-            {{ form.quantity(size=32) }}<br>
-            {% for error in form.quantity.errors %}
-            <span style="color: red;">[{{ error }}]</span>
-            {% endfor %}
-        </p>
-        <p>
-            {{ form.quantity_desc.label }}<br>
-            {{ form.quantity_desc(size=32) }}<br>
-            {% for error in form.quantity_desc.errors %}
-            <span style="color: red;">[{{ error }}]</span>
-            {% endfor %}
-        </p>
-        <p>
-            {{ form.price.label }}<br>
-            {{ form.price(size=32) }}<br>
-            {% for error in form.price.errors %}
-            <span style="color: red;">[{{ error }}]</span>
-            {% endfor %}
-        </p>
-        <p>
-            {{ form.brand.label }}<br>
-            {{ form.brand(size=32) }}<br>
-            {% for error in form.brand.errors %}
-            <span style="color: red;">[{{ error }}]</span>
-            {% endfor %}
-        </p>
-        <p>
-            {{ form.model.label }}<br>
-            {{ form.model(size=32) }}<br>
-            {% for error in form.model.errors %}
-            <span style="color: red;">[{{ error }}]</span>
-            {% endfor %}
-        </p>
-        <p>{{ form.submit() }}</p>
-    </form>
-</p>
-{% endif %}
-<table>
-    {% for product in products %}
-    <tr valign="top">
-        <td>
-            <a href="{{ product.detail_url }}" alt="No image">
-                <img src="{{ product.image_url }}" height="100" style="border-style: solid; border-color: blue; border-width: 1px">
-            </a>
-        </td>
-        <td>
-            <b>{{ product.title }}</b><br>
-            <a href="{{ url_for('edit_vendor', vendor_id=product.vendor_id) }}">{{ product.vendor.name }}</a><br>
-            {{ product.sku }}
-            <a href="{{ url_for('edit_product', product_id=product.id) }}">Edit</a>
-        </td>
-    </tr>
-    {% else %}
-    <tr>
-        <td>No products to show.</td>
-    </tr>
-    {% endfor %}
+{% block toplevel_content %}
+<ul class="list-group">
+    <li class="list-group-item"><strong>Total: </strong>{{ product_count }}</li>
+    <li class="list-group-item"><button id="newProductBtn" type="button" class="btn btn-primary" data-toggle="modal">New Product</button></li>
+</ul>
+{% endblock %}
+
+{% block table_content %}
+<table class="table table-striped table-bordered">
+    <thead>
+        <tr>
+            <th scope="col">id</th>
+            <th scope="col">Vendor</th>
+            <th scope="col">SKU</th>
+            <th scope="col">Title</th>
+            <th scope="col">Quantity</th>
+            <th scope="col">Price</th>
+            <th scope="col"></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for product in products.items %}
+        <tr>
+            <th scope="row">{{ product.id }}</th>
+            <td>{{ product.vendor.name }}</td>
+            <td>{{ product.sku }}</td>
+            <td>{{ product.title }}</td>
+            <td>{{ product.quantity }}</td>
+            <td>{{ as_money(product.price) }}</td>
+            <td>
+                <div class="dropdown">
+                    <button id="actionDrop-{{ product.id }}" class="btn btn-secondary dropdown-toggle" type="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                        Actions
+                    </button>
+                    <div class="dropdown-menu" aria-labelledby="actionDrop-{{ product.id }}">
+                        <a class="dropdown-item" target="_blank" href="{{ product.detail_url }}">Open...</a>
+                        <a class="dropdown-item" href="#">Edit</a>
+                        <a class="dropdown-item" href="#">Delete</a>
+                    </div>
+                </div>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
 </table>
+{{ macros.show_pages(products, 'products') }}
 {% endblock %}

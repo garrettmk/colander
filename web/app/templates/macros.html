@@ -1,0 +1,67 @@
+{% macro form_field(elem) -%}
+<div class="form-group">
+    {% do kwargs.update({'aria-describedby': elem.id + '-help'}) %}
+    {{ elem(class_='form-control', placeholder=elem.label.text, **kwargs) }}
+    <small id="{{ elem.id + '-help' }}" class="form-text text-muted">
+        {% for error in elem.errors %}
+        <span class="text-danger">{{ error }}</span>
+        {% endfor %}
+    </small>
+</div>
+{%- endmacro %}
+
+{% macro form_check(elem) -%}
+<div class="form-check">{{ elem(class_='form-check-input', **kwargs) }}{{ elem.label }}</div>
+{%- endmacro %}
+
+{% macro form_submit(elem) -%}
+{{ elem(class_='btn btn-primary', **kwargs) }}
+{%- endmacro %}
+
+{% macro show_pages(pagination, endpoint) %}
+<ul class="pagination">
+    {% if pagination.has_prev %}
+    <li class="page-item"><a class="page-link" href="{{ url_for(endpoint, page=pagination.prev_num, **kwargs) }}">Previous</a></li>
+    {% else %}
+    <li class="page-item disabled"><span class="page-link">Previous</span></li>
+    {% endif %}
+
+    {% for page in pagination.iter_pages() %}
+    <li class="page-item {% if page == pagination.page %}active{% endif %}"><a class="page-link" href="{{ url_for(endpoint, page=page, **kwargs) }}">{{ page }}</a></li>
+    {% else %}
+    <li class="page-item disabled"><span class="page-link">...</span></li>
+    {% endfor %}
+
+    {% if pagination.has_next %}
+    <li class="page-item"><a class="page-link" href="{{ url_for(endpoint, page=pagination.next_num, **kwargs) }}">Next</a></li>
+    {% else %}
+    <li class="page-item disabled"><span class="page-link">Next</span></li>
+    {% endif %}
+</ul>
+{% endmacro %}
+
+{% macro dynamic_form(button_id, modal_id, form_endpoint, form_id, submit_id) %}
+<script>
+    $(document).ready(function() {
+        $('#' + '{{ button_id }}').click(function() {
+            var url = "{{ url_for(form_endpoint) }}"
+            $.get(url, function(data) {
+                $('#' + '{{ modal_id }}' + ' .modal-content').html(data);
+               $('#' + '{{ modal_id }}').modal('show')
+
+                $('#' + '{{ submit_id }}').click(function(event) {
+                    event.preventDefault();
+                    $.post(url, data=$('#' + form_id).serialize(), function(data) {
+                        if (data.status == 'ok') {
+                            $('#' + '{{ modal_id }}').modal('hide');
+                            location.reload();
+                        } else {
+                            $('#' + '{{ modal_id }}' + ' .modal-content').html(data)
+                        }
+                    });
+                });
+            });
+        });
+    });
+</script>
+{% endmacro %}

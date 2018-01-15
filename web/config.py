@@ -11,3 +11,4 @@ class Config:
     CELERY_IMPORTS = [
         'tasks.mws.products',
     ]
+    MAX_PAGE_ITEMS = 3

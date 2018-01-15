@@ -1,55 +1,48 @@
-{% extends "base.html" %}
+{% extends "toplevel_base.html" %}
 
-{% block content %}
-{% if form %}
-<h1>New Vendor:</h1>
-<p>
-    <form action="" method="post">
-        {{ form.hidden_tag() }}
-        <p>
-            {{ form.name.label }}<br>
-            {{ form.name(size=32) }}<br>
-            {% for error in form.name.errors %}
-            <span style="color: red;">[{{ error }}]</span>
-            {% endfor %}
-        </p>
-        <p>
-            {{ form.website.label }}<br>
-            {{ form.website(size=32) }}<br>
-            {% for error in form.website.errors %}
-            <span style="color: red;">[{{ error }}]</span>
-            {% endfor %}
-        </p>
-        <p>
-            {{ form.image_url.label }}<br>
-            {{ form.image_url(size=32) }}<br>
-            {% for error in form.image_url.errors %}
-            <span style="color: red;">[{{ error }}]</span>
-            {% endfor %}
-        </p>
-        <p>{{ form.submit() }}</p>
-    </form>
-</p>
-{% endif %}
+{% block script %}
+{{ super() }}
+{{ macros.dynamic_form('newVendorBtn', 'newVendorDialog', 'new_vendor_form', 'vendorForm', 'vendorFormSubmit') }}
+{% endblock %}
 
-<table>
-    {% for vendor in vendors %}
-    <tr valign="top">
-        <td>
-            <a href="{{ vendor.website }}" alt="No logo">
-                <img src="{{ vendor.image_url }}" height="100" style="border-style: solid; border-color: blue; border-width: 1px">
-            </a>
-        </td>
-        <td>
-            <b>{{ vendor.name }}</b><br>
-            <a href="{{ vendor.website }}">{{ vendor.website }}</a><br>
-            <a href="{{ url_for('edit_vendor', vendor_id=vendor.id) }}">Edit</a>
-        </td>
-    </tr>
-    {% else %}
-    <tr>
-        <td>No vendors to show.</td>
-    </tr>
-    {% endfor %}
+{% block modals %}
+<div class="modal fade" id="newVendorDialog" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block toplevel_content %}
+<ul class="list-group">
+    <li class="list-group-item"><strong>Vendors: </strong>{{ vendors|length }}</li>
+    <li class="list-group-item"><strong>Products: </strong>{{ product_count }}</li>
+    <li class="list-group-item"><button id="newVendorBtn" type="button" class="btn btn-primary" data-toggle="modal" data-target="#newVendor">New Vendor</button></li>
+</ul>
+{% endblock %}
+
+{% block table_content %}
+<table class="table table-striped table-bordered">
+    <thead>
+        <tr>
+            <th scope="col">id</th>
+            <th scope="col">Name</th>
+            <th scope="col">Website</th>
+            <th scope="col"># Products</th>
+            <th scope="col"></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for vendor in vendors %}
+        <tr>
+            <th scope="row">{{ vendor.id }}</th>
+            <td>{{ vendor.name }}</td>
+            <td><a href="{{ vendor.website }}">{{ vendor.website }}</a></td>
+            <td>{{ vendor.products.count() }}</td>
+            <td><a class="btn btn-secondary" href="{{ url_for('vendor_details', vendor_id=vendor.id) }}">Details</a></td>
+        </tr>
+        {% endfor %}
+    </tbody>
 </table>
 {% endblock %}

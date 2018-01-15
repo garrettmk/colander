@@ -1,0 +1,29 @@
+{% import "macros.html" as macros %}
+<form id="vendorForm" action="" method="post">
+    <div class="modal-header">
+        <h5 class="modal-title">{{ title }}</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+        </button>
+    </div>
+    <div class="modal-body">
+        <div class="form-row">
+            <div class="col-8">
+                {{ form.hidden_tag() }}
+                {{ macros.form_field(form.name) }}
+                {{ macros.form_field(form.website) }}
+                {{ macros.form_field(form.image_url, onchange="var url=$('#'+form.image_url.id).val(); $('#vendorImg').attr('src', url);") }}
+            </div>
+            <div class="col">
+                <div class="img-thumbnail" style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">
+                    <img id="vendorImg" style="max-width: 100%; max-height: 100%;" src="{{ form.image_url.data }}">
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-footer">
+        {% block footer %}
+            {{ macros.form_submit(form.submit, id='vendorFormSubmit') }}
+        {% endblock %}
+    </div>
+</form>
