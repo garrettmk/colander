@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block scripts %}
+    {{ super() }}
+    <script>
+        $(document).ready(function() {
+            {{ macros.dynamic_form('editProductBtn', 'editProductDialog', url_for('edit_product_form', product_id=product.id), 'productForm', 'productFormSubmit') }}
+
+            $('#deleteProductBtn').click(function() {
+                var del = confirm('Are you sure you want to delete this product?')
+                if (del == true) {
+                    $.post('{{ url_for('delete_product') }}', data={product_id: {{ product.id }} }, function() {
+                        location.assign('{{ url_for('products') }}');
+                    });
+                };
+            });
+        });
+    </script>
+{% endblock %}
+
+{% block content %}
+<div class="modal fade" id="editProductDialog" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+        </div>
+    </div>
+</div>
+<div class="container-fluid mt-3">
+    <div class="row justify-content-start">
+        <div class="col-1">
+            <div class="img-thumbnail" style="width: 100%; height: 100%; display: flex; align-items: center;">
+                <img style="max-width: 100%; max-height: 100%;" src="{{ product.image_url }}">
+            </div>
+        </div>
+        <div class="col-3">
+            <h1 id="productTitle">{{ product.title }}</h1>
+            <a href="{{ product.detail_url }}">{{ product.detail_url }}</a>
+            <table class="table mt-4">
+                <tbody>
+                    <tr>
+                        <th scope="row">Vendor/SKU</th>
+                        <td>{{ product.vendor.name }} {{ product.sku }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Price</th>
+                        <td>{{ as_money(product.price) }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Quantity</th>
+                        <td>{{ product.quantity }} ({{ product.quantity_desc }})</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Brand/Model</th>
+                        <td>{{ product.brand }} {{ product.model }}</td>
+                    </tr>
+                    <tr>
+                        <td colspan="2">{{ product.description }}</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p>
+                <button id="editProductBtn" type="button" class="btn btn-primary">Edit</button>
+                <button id="deleteProductBtn" type="button" class="btn btn-danger">Delete</button>
+            </p>
+        </div>
+    </div>
+</div>
+<div class="container-fluid mt-5">
+    <table class="table table-striped table-bordered">
+        <thead>
+            <tr>
+                <th scope="col">id</th>
+                <th scope="col">Supplier</th>
+                <th scope="col">Market</th>
+                <th scope="col">Sale Price</th>
+                <th scope="col">COGS</th>
+                <th scope="col">Profit</th>
+                <th scope="col">Margin</th>
+                <th scope="col">ROI</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for opp in opps_page.items %}
+            <tr>
+                <td><b>{{ opp.id }}</b></td>
+                <td>
+                    <b><a target="blank_" href="{{ opp.supply.detail_url }}">{{ opp.supply.title }}</a></b><br>
+                    {{ opp.supply.vendor.name }} {{ opp.supply.sku }}, {{ as_money(opp.supply.price) }} / {{ opp.supply.quantity }}<br>
+                    Shipping: {{ as_percent(opp.supply.vendor.ship_rate) }}
+                </td>
+                <td>
+                    <b><a target="blank_" href="{{ opp.market.detail_url }}">{{ opp.market.title }}</a></b><br>
+                    {{ opp.market.vendor.name }} {{ opp.market.sku }}, {{ as_money(opp.market.price) }} / {{ opp.market.quantity }}<br>
+                </td>
+                <td>{{ as_money(opp.market.price) }}</td>
+                <td>{{ as_money(opp.cogs) }}</td>
+                <td>{{ as_money(opp.profit) }}</td>
+                <td>{{ as_percent(opp.margin) }}</td>
+                <td>{{ as_percent(opp.roi) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {{ macros.show_pages(opps_page, 'product_details', product_id=product.id) }}
+</div>
+
+{% endblock %}

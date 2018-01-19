@@ -1,5 +1,23 @@
 {% extends "toplevel_base.html" %}
 
+{% block scripts %}
+    {{ super() }}
+    <script>
+        $(document).ready(function() {
+            {{ macros.dynamic_form('newProductBtn', 'newProductDialog', url_for('new_product_form'), 'productForm', 'productFormSubmit') }}
+        });
+    </script>
+{% endblock %}
+
+{% block modals %}
+    <div class="modal fade" id="newProductDialog" tabindex="-1" role="dialog" aria-hidden="true">
+        <div class="modal-dialog modal-lg" role="document">
+            <div class="modal-content">
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
 {% block toplevel_content %}
 <ul class="list-group">
     <li class="list-group-item"><strong>Total: </strong>{{ product_count }}</li>
@@ -36,7 +54,7 @@
                     </button>
                     <div class="dropdown-menu" aria-labelledby="actionDrop-{{ product.id }}">
                         <a class="dropdown-item" target="_blank" href="{{ product.detail_url }}">Open...</a>
-                        <a class="dropdown-item" href="#">Edit</a>
+                        <a class="dropdown-item" href="{{ url_for('product_details', product_id=product.id) }}">Edit</a>
                         <a class="dropdown-item" href="#">Delete</a>
                     </div>
                 </div>

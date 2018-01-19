@@ -159,6 +159,7 @@ def vendor_details(vendor_id):
 @app.route('/quantitymap', methods=['GET', 'POST'])
 @login_required
 def quantity_map():
+    """Render the top-level Quantity Maps index page."""
     form = EditQuantityMapForm()
     if form.validate_on_submit():
         qmap = QuantityMap(
@@ -207,30 +208,7 @@ def edit_quantity_map(qmap_id):
 @app.route('/products', methods=['GET', 'POST'])
 @login_required
 def products():
-    # form = EditProductForm()
-    # if form.validate_on_submit():
-    #     product = Product()
-    #     form.populate_obj(product)
-    #     db.session.add(product)
-    #     db.session.commit()
-    #
-    #     if db.session.query(Vendor.name).filter(Vendor.id == form.vendor_id.data).first()[0] == 'Amazon':
-    #         chain(
-    #             chord(
-    #                 (
-    #                     GetCompetitivePricingForASIN.s(product.sku),
-    #                     ItemLookup.s(product.sku),
-    #                 ),
-    #                 update_amazon_listing.s(product.id)
-    #             ),
-    #             update_fba_fees.s()
-    #         ).apply_async()
-    #     else:
-    #         find_amazon_matches.delay(product.id)
-    #
-    #     flash(f'Product created: {product.vendor.name} {product.sku}')
-    #     return redirect(url_for('products'))
-
+    """Render the top-level Products index page."""
     page_num = request.args.get('page', 1, type=int)
     products = Product.query.order_by(Product.title.asc()).paginate(page_num, app.config['MAX_PAGE_ITEMS'], False)
     product_count = Product.query.count()
@@ -242,30 +220,80 @@ def products():
     )
 
 
-@app.route('/products/<product_id>', methods=['GET', 'POST'])
+@app.route('/products/create', methods=['GET', 'POST'])
 @login_required
-def edit_product(product_id):
-    product = Product.query.filter_by(id=product_id).first()
-    if product is None:
-        flash(f'Invalid product id: {product_id}')
-        return redirect(url_for('products'))
-
-    form = EditProductForm(obj=product)
-    if form.validate_on_submit() and form.submit.data:
-        data = form.data
-        data.pop('submit', None)
-        data.pop('delete', None)
-        data.pop('csrf_token', None)
-        clean_and_import(data)
-        flash(f'Changes saved')
-        return redirect(url_for('products'))
-    elif form.delete.data:
-        db.session.delete(product)
+def new_product_form():
+    """Renders the New Product form."""
+    form = EditProductForm()
+    if form.validate_on_submit():
+        product = Product()
+        form.populate_obj(product)
+        db.session.add(product)
         db.session.commit()
-        flash(f'Product deleted')
-        return redirect(url_for('products'))
+        flash(f'Product {product.sku} created.')
 
-    return render_template('edit_product.html', title='Edit Product', form=form)
+        if product.vendor_id == 1:
+            chain(
+                chord(
+                    (
+                        GetCompetitivePricingForASIN.s(product.sku),
+                        ItemLookup.s(product.sku)
+                    ),
+                    update_amazon_listing.s(product.id)
+                ),
+                update_fba_fees.s()
+            ).apply_async()
+        else:
+            find_amazon_matches.delay(product.id)
+
+        return jsonify(status='ok')
+    
+    return render_template('forms/product.html', title='New Product', form=form)
+
+
+@app.route('/products/<product_id>')
+@login_required
+def product_details(product_id):
+    """Display a product's detail page."""
+    page_num = request.args.get('page', 1, type=int)
+
+    product = Product.query.filter_by(id=product_id).first_or_404()
+    opps = Opportunity.query.filter(
+        db.or_(
+            Opportunity.market_id == product_id,
+            Opportunity.supply_id == product_id
+        )
+    ).paginate(page_num, app.config['MAX_PAGE_ITEMS'], False)
+    return render_template(
+        'product_details.html',
+        product=product,
+        opps_page=opps
+    )
+
+
+@app.route('/products/edit/<product_id>', methods=['GET', 'POST'])
+@login_required
+def edit_product_form(product_id):
+    """Renders the Edit Product form."""
+    product = Product.query.filter_by(id=product_id).first_or_404()
+    form = EditProductForm(obj=product)
+    if form.validate_on_submit():
+        form.populate_obj(product)
+        db.session.commit()
+        flash('Changes saved')
+        return jsonify(status='ok')
+
+    return render_template('forms/product.html', title='Edit Product', form=form)
+
+
+@app.route('/products/delete', methods=['POST'])
+def delete_product():
+    """Delete a product."""
+    product = Product.query.filter_by(id=request.form['product_id']).first_or_404()
+    db.session.delete(product)
+    db.session.commit()
+    flash(f'Product {product.vendor.name} {product.sku} deleted.')
+    return jsonify(status='ok')
 
 
 ########################################################################################################################

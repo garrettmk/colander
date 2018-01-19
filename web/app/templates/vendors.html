@@ -1,8 +1,12 @@
 {% extends "toplevel_base.html" %}
 
-{% block script %}
-{{ super() }}
-{{ macros.dynamic_form('newVendorBtn', 'newVendorDialog', 'new_vendor_form', 'vendorForm', 'vendorFormSubmit') }}
+{% block scripts %}
+    {{ super() }}
+    <script>
+        $(document).ready(function() {
+            {{  macros.dynamic_form('newVendorBtn', 'newVendorDialog', url_for('new_vendor_form'), 'vendorForm', 'vendorFormSubmit') }}
+        });
+    </script>
 {% endblock %}
 
 {% block modals %}
