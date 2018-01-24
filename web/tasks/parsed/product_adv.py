@@ -6,17 +6,17 @@ from amazonmws import MARKETID
 ########################################################################################################################
 
 
-@celery.task
+@celery_app.task
 def ItemSearch(SearchIndex, **kwargs):
     raise NotImplementedError
 
 
-@celery.task
+@celery_app.task
 def BrowseNodeLookup(BrowseNodeId, ResponseGroup=None):
     raise NotImplementedError
 
 
-@celery.task
+@celery_app.task
 def ItemLookup(asin=None, **kwargs):
     params = {
         'ResponseGroup': 'Images,ItemAttributes,OfferFull,SalesRank,EditorialReview',
@@ -71,6 +71,7 @@ def ItemLookup(asin=None, **kwargs):
 
     return format_parsed_response('ItemLookup', params, results, errors)
 
-@celery.task
+
+@celery_app.task
 def SimilarityLookup(ItemId, **kwargs):
     raise NotImplementedError

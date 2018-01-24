@@ -49,7 +49,7 @@ migrate = Migrate(app, db)
 login = LoginManager(app)
 login.login_view = 'login'
 
-celery = FlaskCelery(app)
+celery_app = FlaskCelery(app)
 
 
 from app import routes

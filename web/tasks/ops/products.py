@@ -6,7 +6,7 @@ from celery.utils.log import get_task_logger
 from celery import group, chain, chord
 
 from app import db
-from app.models import Vendor, Product, QuantityMap, Opportunity
+from app.models import Vendor, Product, QuantityMap, Opportunity, ProductHistory
 
 from sqlalchemy import func
 
@@ -19,7 +19,7 @@ logger = get_task_logger(__name__)
 ########################################################################################################################
 
 
-@celery.task(bind=True)
+@celery_app.task(bind=True)
 def clean_and_import(self, data):
     """Cleans, validates, and imports product data."""
 
@@ -70,7 +70,7 @@ def clean_and_import(self, data):
 ########################################################################################################################
 
 
-@celery.task(bind=True)
+@celery_app.task(bind=True)
 def guess_quantity(self, product_id):
     """Guess listing quantity based on QuantityMap data."""
     product = Product.query.filter_by(id=product_id).first()
@@ -121,7 +121,7 @@ def guess_quantity(self, product_id):
 ########################################################################################################################
 
 
-@celery.task(bind=True)
+@celery_app.task(bind=True)
 def quantity_map_updated(self, qmap_id):
     """Updates all related products with new quantity map data."""
     qmap = QuantityMap.query.filter_by(id=qmap_id).first()
@@ -144,7 +144,7 @@ def quantity_map_updated(self, qmap_id):
 ########################################################################################################################
 
 
-@celery.task(bind=True)
+@celery_app.task(bind=True)
 def find_amazon_matches(self, product_id):
     """Find matching products in Amazon's catalog, import them, and create corresponding opportunities."""
     product = Product.query.filter_by(id=product_id).first()
@@ -189,7 +189,7 @@ def find_amazon_matches(self, product_id):
         ).apply_async()
 
 
-@celery.task(bind=True)
+@celery_app.task(bind=True)
 def update_amazon_listing(self, data, product_id):
     """Updates a product using various sources of data."""
 
@@ -246,7 +246,7 @@ def update_amazon_listing(self, data, product_id):
     return product.id
 
 
-@celery.task(bind=True)
+@celery_app.task(bind=True)
 def update_fba_fees(self, product_id):
     """Updates the market_fees field with the total fee amount for the current price."""
     product = Product.query.filter_by(id=product_id).first()
@@ -257,3 +257,15 @@ def update_fba_fees(self, product_id):
         GetMyFeesEstimate(product.sku, str(product.price)),
         product_id
     )
+
+
+@celery_app.task()
+def store_product_history(product_id):
+    """Stores a product's current state in the ProductHistory table."""
+    product = Product.query.filter_by(id=product_id).first()
+    if product is None:
+        raise ValueError(f'Invalid product id: {product_id}')
+
+    history = ProductHistory(product)
+    db.session.add(history)
+    db.session.commit()

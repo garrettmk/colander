@@ -6,7 +6,7 @@ from app.models import Product, Vendor, QuantityMap
 ########################################################################################################################
 
 
-@celery.task(bind=True)
+@celery_app.task(bind=True)
 def clean_and_import(self, data):
     """Cleans, validates, and imports product data."""
 

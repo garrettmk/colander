@@ -1,11 +1,22 @@
+import ast
 from itertools import zip_longest
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, BooleanField, SubmitField, IntegerField, DecimalField, SelectField,\
-    TextAreaField
+    TextAreaField, SelectMultipleField
 from wtforms.fields.html5 import URLField
+from wtforms.ext.sqlalchemy.fields import QuerySelectField
 from wtforms.validators import DataRequired, URL, ValidationError, Optional, Length
 
 from app.models import Vendor, QuantityMap, Product
+
+
+########################################################################################################################
+
+
+class TagsField(SelectMultipleField):
+
+    def pre_validate(self, form):
+        pass
 
 
 ########################################################################################################################
@@ -23,7 +34,6 @@ class EditVendorForm(FlaskForm):
     website = URLField('Website', validators=[DataRequired()])
     image_url = URLField('Image URL')
     submit = SubmitField('OK')
-    delete = SubmitField('Delete')
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -44,7 +54,6 @@ class EditQuantityMapForm(FlaskForm):
     text = StringField('Text', validators=[DataRequired()])
     quantity = IntegerField('Quantity', validators=[DataRequired()])
     submit = SubmitField('Submit')
-    delete = SubmitField('Delete')
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -69,14 +78,21 @@ class EditProductForm(FlaskForm):
     model = StringField('Model', validators=[Optional()])
     upc = StringField('UPC', validators=[Optional()])
     description = TextAreaField('Description', validators=[Optional()])
+    tags = TagsField('Tags', validators=[Optional()])
 
     submit = SubmitField('Submit')
-    delete = SubmitField('Delete')
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.edit_product = kwargs.get('obj', None)
         self.vendor_id.choices = [(v.id, v.name) for v in Vendor.query.order_by(Vendor.name.asc()).all()]
+        if self.edit_product and self.edit_product.tags:
+            self.tags.choices = [(tag, tag) for tag in self.edit_product.tags]
+        else:
+            self.tags.choices = []
+
+    def validate_tags(self, tags):
+        pass
 
     def validate_sku(self, sku):
         vendor_id = int(self.vendor_id.data)
@@ -87,12 +103,37 @@ class EditProductForm(FlaskForm):
 
 class SearchProductsForm(FlaskForm):
     vendor_id = SelectField('Vendor', coerce=int, validators=[Optional()])
-    text = StringField('Text', validators=[Optional()])
-    search_sku = BooleanField('SKU')
-    search_title = BooleanField('Title')
-    search_desc = BooleanField('Description')
+    query = StringField('Text', validators=[Optional()])
+    tags = TagsField('Tags', validators=[Optional()])
+
     submit = SubmitField('Search')
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.vendor_id.choices = [(v.id, v.name) for v in Vendor.query.order_by(Vendor.name.asc()).all()]
+        self.vendor_id.choices = [(0, 'Any')] + [(v.id, v.name) for v in Vendor.query.order_by(Vendor.name.asc()).all()]
+
+
+class EditJobForm(FlaskForm):
+    name = StringField('Name', validators=[DataRequired(), Length(max=64)])
+    schedule_type = SelectField('Schedule', choices=[('schedule', 'Interval'), ('crontab', 'Crontab')])
+    schedule_kwargs = StringField('Arguments', validators=[DataRequired()])
+    task = SelectField('Task', choices=[
+        ('tasks.jobs.jobs.dummy', 'Dummy'),
+        ('tasks.jobs.jobs.track_amazon_products', 'Track Amazon Products')
+    ])
+    task_kwargs = StringField('Arguments', validators=[Optional()])
+    enabled = BooleanField('Enabled', default=False)
+
+    submit = SubmitField('Ok')
+
+    def validate_schedule_kwargs(self, field):
+        try:
+            ast.literal_eval(field.data)
+        except Exception as e:
+            raise ValidationError(repr(e))
+
+    def validate_task_kwargs(self, field):
+        try:
+            ast.literal_eval(field.data)
+        except Exception as e:
+            raise ValidationError(repr(e))

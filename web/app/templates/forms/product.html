@@ -45,6 +45,7 @@
                 {{ macros.form_field(form.detail_url) }}
                 {{ macros.form_field(form.image_url, onchange="var url=$('#'+form.image_url.id).val(); $('#productImg').attr('src', url);") }}
                 {{ macros.form_field(form.description) }}
+                {{ macros.form_tags(form.tags) }}
             </div>
             <div class="col">
                 <div class="img-thumbnail" style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">

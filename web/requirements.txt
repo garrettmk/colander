@@ -6,6 +6,7 @@ flask-sqlalchemy
 flask-migrate
 pymysql
 celery
+celery-redbeat
 redis
 requests
 lxml

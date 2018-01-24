@@ -51,3 +51,10 @@ services:
     ports:
       - "6800:6800"
     command: ["--help"]
+
+
+  flower:
+    hostname: flower
+    image: python:latest
+    ports:
+      - "5555:5555"

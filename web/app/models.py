@@ -1,12 +1,17 @@
 import re
 import decimal
+import json
+import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import UserMixin
-from app import app, db, login
-from sqlalchemy import UniqueConstraint
+from app import app, db, login, celery_app
+from sqlalchemy import UniqueConstraint, orm
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_property
 from fuzzywuzzy import fuzz
+from redbeat import RedBeatScheduler, RedBeatSchedulerEntry
+import celery.schedules as schedules
+
 
 decimal.getcontext().prec = 23
 CURRENCY = db.Numeric(19, 4)
@@ -18,7 +23,7 @@ def quantize(d, places=4):
 
 
 @app.context_processor
-def decimal_processor():
+def jinja_context_funcs():
 
     def as_money(d, p=2):
         if d is None:
@@ -34,7 +39,35 @@ def decimal_processor():
         depth = '.' + '0' * (p - 1) + '1'
         return str((d * 100).quantize(decimal.Decimal(depth))) + '%'
 
-    return dict(as_money=as_money, as_percent=as_percent)
+    def as_quantity(i):
+        if i is None:
+            return 'N/A'
+
+        return f'{i:,}'
+
+    def as_yesno(b):
+        if b is None:
+            return 'N/A'
+
+        return 'Yes' if b else 'No'
+
+    def set_page_number(url, page):
+        if 'page=' in url:
+            return re.sub(f'page=+\d','page=%d' % page, url)
+        elif url.endswith('?'):
+            return url + 'page=%d' % page
+        elif '?' in url:
+            return url + '&page=%d' % page
+        else:
+            return url + '?page=%d' % page
+
+    return dict(
+        as_money=as_money,
+        as_percent=as_percent,
+        as_quantity=as_quantity,
+        as_yesno=as_yesno,
+        set_page_number=set_page_number
+    )
 
 
 ########################################################################################################################
@@ -116,6 +149,7 @@ class Product(db.Model):
 
     quantity_desc = db.Column(db.String(64))
     data = db.Column(db.JSON)
+    tags = db.Column(db.JSON, default=[])
 
     supply_listings = association_proxy('supply_relations', 'supply', creator=lambda l: Opportunity(supply=l))
     market_listings = association_proxy('market_relations', 'market', creator=lambda l: Opportunity(market=l))
@@ -148,6 +182,35 @@ class Product(db.Model):
 
     def __repr__(self):
         return f'<{type(self).__name__} {self.sku}>'
+
+    @classmethod
+    def build_query(cls, query=None, tags=None, vendor_id=None):
+        q = cls.query
+
+        if query:
+            q_str = f'%{query}%'
+            q = q.filter(
+                db.or_(
+                    cls.title.ilike(q_str),
+                    cls.sku.ilike(q_str),
+                    cls.quantity_desc.ilike(q_str)
+                )
+            )
+
+        if tags:
+            q = q.filter(
+                db.func.json_contains(
+                    cls.tags,
+                    json.dumps(tags)
+                )
+            )
+
+        if vendor_id:
+            q = q.filter_by(
+                vendor_id=vendor_id
+            )
+
+        return q
 
     def update(self, data):
         for key in list(data):
@@ -321,3 +384,97 @@ class Opportunity(db.Model):
         return db.select([
             db.cast(cls.profit / cls.cogs, db.Numeric(19, 4))
         ]).label('roi')
+
+
+########################################################################################################################
+
+
+class Job(db.Model):
+    """Stores recurring job information."""
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(64), index=True, unique=True)
+    schedule = db.Column(db.JSON)
+    enabled = db.Column(db.Boolean, default=False)
+    task = db.Column(db.JSON)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.init_on_load()
+        self.entry = None
+
+    @orm.reconstructor
+    def init_on_load(self):
+        try:
+            self.entry = RedBeatSchedulerEntry.from_key(
+                key=RedBeatSchedulerEntry(name=self.name, app=celery_app).key,
+                app=celery_app
+            )
+        except KeyError:
+            self.entry = None
+
+    def create_scheduler_entry(self):
+        sched_type = list(self.schedule.keys())[0]
+        sched_kwargs = self.schedule[sched_type]
+        schedule = getattr(schedules, sched_type)(**sched_kwargs)
+
+        task = list(self.task.keys())[0]
+        task_kwargs = self.task[task]
+
+        self.entry = RedBeatSchedulerEntry(
+            name=self.name,
+            task=task,
+            schedule=schedule,
+            kwargs=task_kwargs,
+            enabled=self.enabled,
+            app=celery_app
+        )
+
+    @staticmethod
+    def create_entry(mapper, connection, target):
+        print(f'Create entry')
+        target.create_scheduler_entry()
+        target.entry.save()
+
+    @staticmethod
+    def update_entry(mapper, connection, target):
+        print('Update entry')
+        if target.entry and target.entry.name != target.name:
+            target.entry.delete()
+
+        target.create_scheduler_entry()
+        target.entry.save()
+
+    @staticmethod
+    def delete_entry(mapper, connection, target):
+        print('Delete entry')
+        if target.entry:
+            target.entry.delete()
+            target.entry = None
+
+    @classmethod
+    def __declare_last__(cls):
+        db.event.listen(cls, 'after_insert', cls.create_entry)
+        db.event.listen(cls, 'after_update', cls.update_entry)
+        db.event.listen(cls, 'after_delete', cls.delete_entry)
+
+
+########################################################################################################################
+
+
+class ProductHistory(db.Model):
+    """Stores key product data for a given point in time."""
+    id = db.Column(db.Integer, primary_key=True)
+    product_id = db.Column(db.Integer, db.ForeignKey('product.id', ondelete='CASCADE'), nullable=False)
+    timestamp = db.Column(db.DateTime, nullable=False)
+    price = db.Column(CURRENCY)
+    market_fees = db.Column(CURRENCY)
+    rank = db.Column(db.Integer)
+    flags = db.Column(db.JSON)
+
+    def __init__(self, product=None):
+        if product:
+            self.product_id = product.id
+            self.timestamp = datetime.datetime.now()
+            self.price = product.price
+            self.market_fees = product.market_fees
+            self.rank = product.rank

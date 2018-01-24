@@ -1,0 +1,95 @@
+{% extends "toplevel_base.html" %}
+
+{% block scripts %}
+    {{ super() }}
+    <script>
+        $(document).ready(function() {
+            {{ macros.dynamic_form('newQuantityMapBtn', 'newQuantityMapDlg', url_for('new_quantity_map_form'), 'quantityMapForm', 'quantityMapFormSubmit') }}
+        });
+
+        function delete_qmap(qmap_id) {
+            var del = confirm('Are you sure you want to delete this quanityt map?');
+            if (del == true) {
+                $.post('{{ url_for("delete_quantity_map") }}', data={qmap_id: qmap_id}, function() {
+                    location.assign('{{ url_for('quantity_maps') }}');
+                });
+            };
+        };
+
+        function edit_qmap(url) {
+            $.get(url, function(data) {
+                $('#editQuantityMapDlg .modal-content').html(data);
+                $('#editQuantityMapDlg').modal('show');
+
+                $('#quantityMapFormSubmit').click(function(event) {
+                    event.preventDefault();
+                    $.post(url, data=$('#quantityMapForm').serialize(), function(data) {
+                        if (data.status == 'ok') {
+                            $('#editQuantityMapDlg').modal('hide');
+                            location.reload();
+                        } else {
+                            $('#editQuantityMapDlg .modal-content').html(data);
+                        }
+                    });
+                });
+            });
+        };
+    </script>
+{% endblock %}
+
+{% block modals %}
+    <div class="modal fade" id="newQuantityMapDlg" tabindex="-1" role="dialog">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="editQuantityMapDlg" tabindex="-1" role="dialog">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block toplevel_content %}
+    <ul class="list-group">
+        <li class="list-group-item"><strong>Total quantity maps: </strong>{{ count }}</li>
+        <li class="list-group-item"><button id="newQuantityMapBtn" type="button" class="btn btn-primary" data-toggle="modal">New Quantity Map</button></li>
+    </ul>
+{% endblock %}
+
+{% block table_content %}
+    <table class="table table-striped table-bordered">
+        <thead>
+            <th scope="col">id</th>
+            <th scope="col">Text</th>
+            <th scope="col">Quantity</th>
+            <th></th>
+        </thead>
+        <tbody>
+            {% for qmap in qmaps.items %}
+                <tr>
+                    <th scope="row">{{ qmap.id }}</th>
+                    <td>{{ qmap.text }}</td>
+                    <td>{{ qmap.quantity }}</td>
+                    <td>
+                        <div class="dropdown">
+                            <button id="actionDrop-{{ qmap.id }}" class="btn btn-secondary dropdown-toggle" type="button" data-toggle="dropdown">Actions</button>
+                            <div class="dropdown-menu">
+                                <button class="dropdown-item" type="button" onclick="edit_qmap('{{ url_for('edit_quantity_map_form', qmap_id=qmap.id) }}')">Edit</button>
+                                <button class="dropdown-item" type="button" onclick="delete_qmap({{ qmap.id }});">Delete</button>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            {% else %}
+                <tr>
+                    <td colspan="4">No quantity maps to show.</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {{ macros.show_pages(qmaps, url_for('quantity_maps')) }}
+{% endblock %}

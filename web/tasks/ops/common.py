@@ -1,9 +1,9 @@
-from app import celery
+from app import celery_app
 
 
 ########################################################################################################################
 
 
-class OpsTask(celery.Task):
+class OpsTask(celery_app.Task):
     """Provides common behaviours and resources for the ops group of tasks."""
 

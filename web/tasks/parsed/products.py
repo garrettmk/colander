@@ -6,7 +6,7 @@ from amazonmws import MARKETID
 ########################################################################################################################
 
 
-@celery.task
+@celery_app.task
 def GetServiceStatus(**kwargs):
     response = AmzXmlResponse(
         products.GetServiceStatus(**kwargs)
@@ -15,7 +15,7 @@ def GetServiceStatus(**kwargs):
     return response.xpath_get('.//Status')
 
 
-@celery.task
+@celery_app.task
 def ListMatchingProducts(query=None, **kwargs):
     """Perform a ListMatchingProducts request."""
     # Allow two-letter abbreviations for MarketplaceId
@@ -66,7 +66,7 @@ def ListMatchingProducts(query=None, **kwargs):
     return format_parsed_response('ListMatchingProducts', params, results)
 
 
-@celery.task
+@celery_app.task
 def GetMyFeesEstimate(asin=None, price=None, **kwargs):
     """Return the total fees estimate for a given ASIN and price."""
     # Allow two-letter marketplace abbreviations
@@ -111,7 +111,7 @@ def GetMyFeesEstimate(asin=None, price=None, **kwargs):
     return format_parsed_response('GetMyFeesEstimate', params, results, errors)
 
 
-@celery.task
+@celery_app.task
 def GetCompetitivePricingForASIN(asin=None, **kwargs):
     """Perform a GetCompetivePricingForASIN call and return the results as a simplified JSON dictionary."""
     market_id = kwargs.pop('MarketplaceId', 'US')

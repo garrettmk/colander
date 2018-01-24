@@ -88,6 +88,6 @@
             {% endfor %}
         </tbody>
     </table>
-    {{ macros.show_pages(product_page, 'vendor_details', vendor_id=vendor.id) }}
+    {{ macros.show_pages(product_page, url_for('vendor_details', vendor_id=vendor.id)) }}
 </div>
 {% endblock %}

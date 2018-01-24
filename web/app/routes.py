@@ -1,15 +1,18 @@
+import ast
+
 from flask import request, flash, render_template, redirect, url_for, jsonify
 from flask_login import current_user, login_user, logout_user, login_required
 
-from app import app, db, celery
-from app.forms import LoginForm, EditVendorForm, EditQuantityMapForm, EditProductForm, SearchProductsForm
-from app.models import User, Vendor, QuantityMap, Product, Opportunity
+from app import app, db, celery_app
+from app.forms import LoginForm, EditVendorForm, EditQuantityMapForm, EditProductForm, SearchProductsForm, EditJobForm
+from app.models import User, Vendor, QuantityMap, Product, Opportunity, Job, ProductHistory
 
 from celery import chain, chord
 from tasks.ops.products import clean_and_import, update_amazon_listing, update_fba_fees, find_amazon_matches,\
     quantity_map_updated
 from tasks.parsed.products import GetCompetitivePricingForASIN, GetMyFeesEstimate
 from tasks.parsed.product_adv import ItemLookup
+from tasks.jobs import dummy
 
 
 ########################################################################################################################
@@ -60,7 +63,7 @@ def api_call(task):
     args = [arg for arg, val in request.args.items() if not len(val)]
     kwargs = {arg: val for arg, val in request.args.items() if arg not in args}
 
-    job = celery.send_task(
+    job = celery_app.send_task(
         task_name,
         args=args,
         kwargs=kwargs,
@@ -130,7 +133,6 @@ def edit_vendor_form(vendor_id):
 @login_required
 def delete_vendor():
     """Delete a vendor."""
-    print(request.form)
     vendor = Vendor.query.filter_by(id=request.form['vendor_id']).first_or_404()
     db.session.delete(vendor)
     db.session.commit()
@@ -156,49 +158,56 @@ def vendor_details(vendor_id):
 # Quantity mappings
 
 
-@app.route('/quantitymap', methods=['GET', 'POST'])
+@app.route('/quantitymaps', methods=['GET', 'POST'])
 @login_required
-def quantity_map():
+def quantity_maps():
     """Render the top-level Quantity Maps index page."""
+    page_num = request.args.get('page', 1, type=int)
+    qmaps = QuantityMap.query.order_by(QuantityMap.quantity.asc()).paginate(page_num, app.config['MAX_PAGE_ITEMS'], False)
+    count = QuantityMap.query.count()
+    return render_template('quantity_maps.html', title='Quantity Maps', qmaps=qmaps, count=count)
+
+
+@app.route('/quantitymaps/create', methods=['GET', 'POST'])
+@login_required
+def new_quantity_map_form():
+    """Renders the New Quantity Map form."""
     form = EditQuantityMapForm()
     if form.validate_on_submit():
-        qmap = QuantityMap(
-            text=form.text.data,
-            quantity=form.quantity.data
-        )
-
+        qmap = QuantityMap()
+        form.populate_obj(qmap)
         db.session.add(qmap)
         db.session.commit()
-        quantity_map_updated.delay(qmap.id)
-        flash(f'New quantity map created: {qmap.text} = {qmap.quantity}')
-        return redirect(url_for('quantity_map'))
+        flash(f'Quantity map created (id={qmap.id})')
+        return jsonify(status='ok')
 
-    qmaps = QuantityMap.query.order_by(QuantityMap.text.asc()).all()
-    return render_template('quantity_map.html', title='Quantity Maps', form=form, qmaps=qmaps)
+    return render_template('forms/quantity_map.html', title='New Quantity Map', form=form)
 
 
-@app.route('/quantitymap/<qmap_id>', methods=['GET', 'POST'])
+@app.route('/quantitymaps/edit/<qmap_id>', methods=['GET', 'POST'])
 @login_required
-def edit_quantity_map(qmap_id):
-    qmap = QuantityMap.query.filter_by(id=qmap_id).first()
-    if qmap is None:
-        flash(f'Invalid quantity map id: {qmap_id}')
-        return redirect(url_for('quantity_map'))
-
+def edit_quantity_map_form(qmap_id):
+    """Renders the Edit Quantity Map form."""
+    qmap = QuantityMap.query.filter_by(id=qmap_id).first_or_404()
     form = EditQuantityMapForm(obj=qmap)
-    if form.validate_on_submit() and form.submit.data:
+    if form.validate_on_submit():
         form.populate_obj(qmap)
         db.session.commit()
         quantity_map_updated.delay(qmap.id)
-        flash(f'Changes saved: {qmap.text} = {qmap.quantity}')
-        return redirect(url_for('quantity_map'))
-    elif form.delete.data:
-        db.session.delete(qmap)
-        db.session.commit()
-        flash(f'Deleted quantity map \"{qmap.text}\"')
-        return redirect(url_for('quantity_map'))
+        flash(f'Changes saved')
+        return jsonify(status='ok')
 
-    return render_template('edit_quantity_map.html', title='Edit Quantity Map', form=form)
+    return render_template('forms/quantity_map.html', title='Edit Quantity Map', form=form)
+
+
+@app.route('/quantitymaps/delete', methods=['POST'])
+def delete_quantity_map():
+    """Deletes a quantity map."""
+    qmap = QuantityMap.query.filter_by(id=request.form['qmap_id']).first_or_404()
+    db.session.delete(qmap)
+    db.session.commit(qmap)
+    flash(f'Quantity map {qmap.text}={qmap.quantity} deleted.')
+    return jsonify(status='ok')
 
 
 ########################################################################################################################
@@ -209,14 +218,27 @@ def edit_quantity_map(qmap_id):
 @login_required
 def products():
     """Render the top-level Products index page."""
-    page_num = request.args.get('page', 1, type=int)
-    products = Product.query.order_by(Product.title.asc()).paginate(page_num, app.config['MAX_PAGE_ITEMS'], False)
-    product_count = Product.query.count()
+    search_form = SearchProductsForm(request.args)
+    search_form.tags.choices = [(tag, tag) for tag in request.args.getlist('tags')]
+
+    products = Product.build_query(
+        query=request.args.get('query'),
+        tags=request.args.getlist('tags'),
+        vendor_id=request.args.get('vendor_id', type=int)
+    ).order_by(
+        Product.title.asc()
+    )
+
     return render_template(
         'products.html',
         title='Products',
-        products=products,
-        product_count=product_count
+        search_form=search_form,
+        products=products.paginate(
+            request.args.get('page', 1, type=int),
+            app.config['MAX_PAGE_ITEMS'],
+            False
+        ),
+        result_count=products.count()
     )
 
 
@@ -258,16 +280,19 @@ def product_details(product_id):
     page_num = request.args.get('page', 1, type=int)
 
     product = Product.query.filter_by(id=product_id).first_or_404()
+    history = ProductHistory.query.filter_by(product_id=product_id).order_by(ProductHistory.timestamp).all()
     opps = Opportunity.query.filter(
         db.or_(
             Opportunity.market_id == product_id,
             Opportunity.supply_id == product_id
         )
     ).paginate(page_num, app.config['MAX_PAGE_ITEMS'], False)
+
     return render_template(
         'product_details.html',
         product=product,
-        opps_page=opps
+        opps_page=opps,
+        history=history
     )
 
 
@@ -303,5 +328,107 @@ def delete_product():
 @app.route('/opportunities')
 @login_required
 def opportunities():
-    opps = Opportunity.query.all()
-    return render_template('opportunities.html', title='Opportunities', opportunities=opps)
+    page_num = request.args.get('page', 1, type=int)
+    opps = Opportunity.query.paginate(page_num, app.config['MAX_PAGE_ITEMS'], False)
+    return render_template('opportunities.html', title='Opportunities', opps_page=opps)
+
+
+########################################################################################################################
+# Jobs
+
+
+@app.route('/jobs')
+@login_required
+def jobs():
+    """The top-level Jobs index."""
+    jobs = Job.query.all()
+    return render_template(
+        'jobs.html',
+        title='Jobs',
+        jobs=jobs,
+        result_count=Job.query.count()
+    )
+
+
+@app.route('/jobs/create', methods=['GET', 'POST'])
+@login_required
+def new_job_form():
+    """Render the New Job form."""
+    form = EditJobForm()
+    if form.validate_on_submit():
+        job = Job(
+            name=form.name.data,
+            schedule={form.schedule_type.data: ast.literal_eval(form.schedule_kwargs.data)},
+            enabled=form.enabled.data,
+            task={form.task.data: ast.literal_eval(form.task_kwargs.data)}
+        )
+
+        db.session.add(job)
+        db.session.commit()
+        flash(f'New job \'{job.name}\' created.')
+        return jsonify(status='ok')
+
+    return render_template('forms/job.html', title='New Job', form=form)
+
+
+@app.route('/jobs/<job_id>')
+@login_required
+def job_details(job_id):
+    job = Job.query.filter_by(id=job_id).first_or_404()
+
+    return render_template(
+        'job_details.html',
+        job=job
+    )
+
+
+@app.route('/jobs/edit/<job_id>', methods=['GET', 'POST'])
+@login_required
+def edit_job_form(job_id):
+    job = Job.query.filter_by(id=job_id).first_or_404()
+    form = EditJobForm()
+
+    if request.method == 'POST' and form.validate_on_submit():
+        job.name = form.name.data
+        job.schedule = {form.schedule_type.data: ast.literal_eval(form.schedule_kwargs.data)}
+        job.task = {form.task.data: ast.literal_eval(form.task_kwargs.data)}
+        job.enabled = form.enabled.data
+        db.session.commit()
+        flash(f'Changes saved')
+        return jsonify(status='ok')
+    elif request.method == 'GET':
+        form.name.data = job.name
+        form.schedule_type.data = list(job.schedule.keys())[0] if job.schedule else None
+        form.schedule_kwargs.data = job.schedule[form.schedule_type.data] if job.schedule else None
+        form.task.data = list(job.task.keys())[0] if job.task else None
+        form.task_kwargs.data = job.task[form.task.data] if job.task else None
+        form.enabled.data = job.enabled
+
+    return render_template('forms/job.html', title='Edit Job', form=form)
+
+
+@app.route('/jobs/delete', methods=['POST'])
+@login_required
+def delete_job():
+    job = Job.query.filter_by(id=request.form['job_id']).first_or_404()
+    db.session.delete(job)
+    db.session.commit()
+    flash(f'Job deleted.')
+    return jsonify(status='ok')
+
+
+@app.route('/jobs/control', methods=['POST'])
+def control_jobs():
+    action = request.form['action']
+    print(f'control_jobs: {action}')
+
+    if action == 'start':
+        jobs = Job.query.all()
+        for job in jobs:
+            job.create_scheduler_entry()
+            job.entry.save()
+
+    elif action == 'stop':
+        jobs = Job.query.all()
+        for job in jobs:
+            job.entry.delete()
