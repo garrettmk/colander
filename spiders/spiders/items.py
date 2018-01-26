@@ -16,7 +16,7 @@ class ProductItem(scrapy.Item):
     quantity_desc = scrapy.Field()
     title = scrapy.Field()
     description = scrapy.Field()
-    detail_page_url = scrapy.Field()
+    detail_url = scrapy.Field()
     image_url = scrapy.Field()
     category = scrapy.Field()
     rank = scrapy.Field()

@@ -15,55 +15,23 @@
         {% endif %}
     </head>
     <body>
-    <nav class="navbar navbar-expand-lg navbar-light bg-dark">
-        <a class="navbar-brand text-light" href="{{ url_for('index') }}">Colander</a>
-        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle Navigation">
-            <span class="navbar-toggler-icon"></span>
-        </button>
-
-        <div class="collapse navbar-collapse" id="navbarSupportedContent">
-            <ul class="navbar-nav mr-auto">
-                <li class="nav-item active">
-                    <a class="nav-link text-light" href="{{ url_for('vendors') }}">Vendors</a>
-                </li>
-                <li>
-                    <a class="nav-link text-light" href="{{ url_for('products') }}">Products</a>
-                </li>
-                <li>
-                    <a class="nav-link text-light" href="{{ url_for('quantity_maps') }}">Quantity Maps</a>
-                </li>
-                <li>
-                    <a class="nav-link text-light" href="{{ url_for('opportunities') }}">Opportunities</a>
-                </li>
-                <li>
-                    <a class="nav-link text-light" href="{{ url_for('jobs') }}">Jobs</a>
-                </li>
-            </ul>
-            {% if current_user.is_authenticated %}
-            <ul class="navbar-nav navbar-right">
-                <li>
-                    <a class="nav-link text-light mr-sm-2" href="{{ url_for('logout') }}">Logout</a>
-                </li>
-            </ul>
-            {% endif %}
-        </div>
-    </nav>
-    {% with messages = get_flashed_messages() %}
-    {% for message in messages %}
-    <div class="alert alert-warning alert-dismissible fade show" role="alert">
-        {{ message }}
-        <button type="button" class="close" data-dismiss="alert" aria-label="Close">
-            <span aria-hidden="true">&times;</span>
-        </button>
-    </div>
-    {% endfor %}
-    {% endwith %}
-    {% block modals %}{% endblock %}
-    {% block content %}{% endblock %}
-    <script src="https://code.jquery.com/jquery-3.2.1.min.js" crossorigin="anonymous"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
-    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta.3/js/bootstrap.min.js" integrity="sha384-a5N7Y/aK3qNeh15eJKGWxsqtnX/wWdSZSKp+81YjTmS15nvnvxKHuzaWwXHDli+4" crossorigin="anonymous"></script>
-    <script src="{{ url_for('static', filename='tagsinput.js') }}"></script>
-    {% block scripts %}{% endblock %}
+        {% block modals %}{% endblock %}
+        {% block navbar %}{% endblock %}
+        {% with messages = get_flashed_messages() %}
+            {% for message in messages %}
+                <div class="alert alert-warning alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+            {% endfor %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+        <script src="https://code.jquery.com/jquery-3.2.1.min.js" crossorigin="anonymous"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
+        <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta.3/js/bootstrap.min.js" integrity="sha384-a5N7Y/aK3qNeh15eJKGWxsqtnX/wWdSZSKp+81YjTmS15nvnvxKHuzaWwXHDli+4" crossorigin="anonymous"></script>
+        <script src="{{ url_for('static', filename='tagsinput.js') }}"></script>
+        {% block scripts %}{% endblock %}
     </body>
 </html>

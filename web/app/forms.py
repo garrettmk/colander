@@ -5,7 +5,7 @@ from wtforms import StringField, PasswordField, BooleanField, SubmitField, Integ
     TextAreaField, SelectMultipleField
 from wtforms.fields.html5 import URLField
 from wtforms.ext.sqlalchemy.fields import QuerySelectField
-from wtforms.validators import DataRequired, URL, ValidationError, Optional, Length
+from wtforms.validators import DataRequired, URL, ValidationError, Optional, Length, NumberRange
 
 from app.models import Vendor, QuantityMap, Product
 
@@ -137,3 +137,21 @@ class EditJobForm(FlaskForm):
             ast.literal_eval(field.data)
         except Exception as e:
             raise ValidationError(repr(e))
+
+
+class SearchOpportunitiesForm(FlaskForm):
+    query = StringField('Keywords', validators=[Optional()])
+    max_cogs = DecimalField('Maximum Cost of Goods Sold (COGS)', validators=[Optional()])
+    min_profit = DecimalField('Minimum Profit', validators=[Optional()])
+    min_roi = DecimalField('Minimum Return On Investment (ROI)', validators=[Optional()])
+    min_similarity = DecimalField('Minimum similarity', validators=[Optional(), NumberRange(min=0, max=100)])
+    max_rank = IntegerField('Maximum rank', validators=[Optional(), NumberRange(min=0)])
+    sort_by = SelectField('Sort by', choices=[
+        ('rank', 'Rank'),
+        ('cogs', 'COGS'),
+        ('profit', 'Profit'),
+        ('roi', 'ROI'),
+        ('similarity', 'Similarity')
+    ])
+    sort_direction = SelectField('Asc/Desc', choices=[('asc', 'Ascending'), ('desc', 'Descending')])
+    submit = SubmitField('Search')

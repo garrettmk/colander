@@ -4,7 +4,8 @@ from flask import request, flash, render_template, redirect, url_for, jsonify
 from flask_login import current_user, login_user, logout_user, login_required
 
 from app import app, db, celery_app
-from app.forms import LoginForm, EditVendorForm, EditQuantityMapForm, EditProductForm, SearchProductsForm, EditJobForm
+from app.forms import LoginForm, EditVendorForm, EditQuantityMapForm, EditProductForm, SearchProductsForm, EditJobForm,\
+    SearchOpportunitiesForm
 from app.models import User, Vendor, QuantityMap, Product, Opportunity, Job, ProductHistory
 
 from celery import chain, chord
@@ -214,7 +215,7 @@ def delete_quantity_map():
 # Products
 
 
-@app.route('/products', methods=['GET', 'POST'])
+@app.route('/products')
 @login_required
 def products():
     """Render the top-level Products index page."""
@@ -254,7 +255,7 @@ def new_product_form():
         db.session.commit()
         flash(f'Product {product.sku} created.')
 
-        if product.vendor_id == 1:
+        if product.vendor_id == Vendor.get_amazon().id:
             chain(
                 chord(
                     (
@@ -328,9 +329,22 @@ def delete_product():
 @app.route('/opportunities')
 @login_required
 def opportunities():
-    page_num = request.args.get('page', 1, type=int)
-    opps = Opportunity.query.paginate(page_num, app.config['MAX_PAGE_ITEMS'], False)
-    return render_template('opportunities.html', title='Opportunities', opps_page=opps)
+    scale = lambda f: f/100 if f else f
+    form = SearchOpportunitiesForm(request.args)
+    opps = Opportunity.build_query(
+        query=request.args.get('query'),
+        max_cogs=request.args.get('max_cogs', type=float),
+        min_profit=request.args.get('min_profit', type=float),
+        min_roi=scale(request.args.get('min_roi', type=float)),
+        min_similarity=scale(request.args.get('min_similarity', type=float)),
+        max_rank=request.args.get('max_rank', type=int)
+    ).paginate(per_page=app.config['MAX_PAGE_ITEMS'])
+
+    return render_template(
+        'opportunities.html',
+        opps_page=opps,
+        form=form
+    )
 
 
 ########################################################################################################################

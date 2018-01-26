@@ -9,6 +9,7 @@ from app import db
 from app.models import Vendor, Product, QuantityMap, Opportunity, ProductHistory
 
 from sqlalchemy import func
+from sqlalchemy.exc import InternalError
 
 from tasks.parsed.products import ListMatchingProducts, GetCompetitivePricingForASIN, GetMyFeesEstimate
 from tasks.parsed.product_adv import ItemLookup
@@ -64,7 +65,10 @@ def clean_and_import(self, data):
     db.session.commit()
 
     # Try to determine listing quantity
-    guess_quantity.delay(product.id)
+    chain(
+        guess_quantity.s(product.id),
+        find_amazon_matches.si(product.id)
+    ).apply_async()
 
 
 ########################################################################################################################
@@ -116,6 +120,7 @@ def guess_quantity(self, product_id):
                 product.quantity = quantity
 
     db.session.commit()
+    return product_id
 
 
 ########################################################################################################################
@@ -144,7 +149,7 @@ def quantity_map_updated(self, qmap_id):
 ########################################################################################################################
 
 
-@celery_app.task(bind=True)
+@celery_app.task(bind=True, autoretry_for=(InternalError,))
 def find_amazon_matches(self, product_id):
     """Find matching products in Amazon's catalog, import them, and create corresponding opportunities."""
     product = Product.query.filter_by(id=product_id).first()
@@ -158,12 +163,7 @@ def find_amazon_matches(self, product_id):
     else:
         raise ValueError(f'Data required: brand + model OR title')
 
-    amazon = Vendor.query.filter_by(name='Amazon').first()
-    if amazon is None:
-        amazon = Vendor(name='Amazon', website='http://www.amazon.com')
-        db.session.add(amazon)
-        db.session.commit()
-
+    amazon = Vendor.get_amazon()
     matches = ListMatchingProducts(query=query_string)
 
     for match_data in matches['results']:
@@ -222,7 +222,10 @@ def update_amazon_listing(self, data, product_id):
             listing_price = api_results.get('listing_price', None)
             shipping = api_results.get('shipping', None)
 
-            product.price = landed_price if landed_price is not None else listing_price + shipping
+            try:
+                product.price = landed_price if landed_price is not None else listing_price + shipping
+            except TypeError:
+                pass
 
             if product.data is not None:
                 product.data['offers'] = api_results.get('offers', None)

@@ -29,7 +29,7 @@ class ColanderPipeline:
         item_data.update(vendor=vendor)
 
         self.celery.send_task(
-            'ops.products.clean_and_import',
+            'tasks.ops.products.clean_and_import',
             kwargs={'data': item_data}
         )
 

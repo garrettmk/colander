@@ -12,3 +12,4 @@ requests
 lxml
 fuzzywuzzy
 python-Levenshtein
+flower

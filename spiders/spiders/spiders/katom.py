@@ -31,9 +31,9 @@ class KatomProductLoader(ItemLoader):
 
     def price_in(self, input):
         match = self.re_price.search(input[0])
-        return match.group(1) if match is not None else None
+        return match.group(1).replace(',', '') if match is not None else None
 
-    def quantity_string_in(self, input):
+    def quantity_desc_in(self, input):
         match = self.re_quantity.search(input[0])
         return match.group(1)
 
@@ -103,12 +103,12 @@ class KatomSpider(scrapy.Spider):
         loader.add_css('sku', 'span.code::text')
         loader.add_css('model', 'span.code::text')
         loader.add_css('price', 'strong.price::text')
-        loader.add_css('quantity_string', 'strong.price span::text')
+        loader.add_css('quantity_desc', 'strong.price span::text')
 
         loader.nested_css('section#overview')
         loader.add_css('brand', 'span[itemprop="brand"]::text')
 
-        loader.add_value('detail_page_url', response.url)
+        loader.add_value('detail_url', response.url)
         loader.add_value('category', response.meta.get('category', None))
         loader.add_value('rank', response.meta.get('rank', 0))
 

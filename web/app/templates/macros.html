@@ -1,5 +1,5 @@
 {# Macros for rendering form controls. #}
-{% macro form_field(elem, prepend='') -%}
+{% macro form_field(elem, prepend='', append='') -%}
     <div class="form-group">
         {{ elem.label }}
         <div class="input-group">
@@ -13,6 +13,11 @@
             {%- else -%}
                 {{ elem(class_='form-control', **kwargs) }}
             {%- endif -%}
+            {%  if append %}
+                <div class="input-group-append">
+                    <span class="input-group-text">{{ append }}</span>
+                </div>
+            {% endif %}
             <div class="invalid-feedback">
                 {% for error in elem.errors %}{{ error }}{% endfor %}
             </div>
@@ -53,7 +58,11 @@
     {% endif %}
 
     {% for page in pagination.iter_pages() %}
-    <li class="page-item {% if page == pagination.page %}active{% endif %}"><a class="page-link" href="{{ set_page_number(base_url, page) }}">{{ page }}</a></li>
+        {% if page %}
+            <li class="page-item {% if page == pagination.page %}active{% endif %}"><a class="page-link" href="{{ set_page_number(base_url, page) }}">{{ page }}</a></li>
+        {% else %}
+            <li class="page-item disabled"><span class="page-link">...</span></li>
+        {% endif %}
     {% else %}
     <li class="page-item disabled"><span class="page-link">...</span></li>
     {% endfor %}
@@ -97,7 +106,9 @@ $('#' + '{{ button_id }}').click(function() {
             <tr>
                 <th scope="col">id</th>
                 <th scope="col">Supplier</th>
+                <th scope="col">Match %</th>
                 <th scope="col">Market</th>
+                <th scope="col">Rank</th>
                 <th scope="col">Sale Price</th>
                 <th scope="col">COGS</th>
                 <th scope="col">Profit</th>
@@ -114,11 +125,13 @@ $('#' + '{{ button_id }}').click(function() {
                     {{ opp.supply.vendor.name }} {{ opp.supply.sku }}, {{ as_money(opp.supply.price) }} / {{ opp.supply.quantity }}<br>
                     Shipping: {{ as_percent(opp.supply.vendor.ship_rate) }}
                 </td>
+                <td>{{ as_percent(opp.similarity) }}</td>
                 <td>
                     <b><a href="{{ url_for('product_details', product_id=opp.market_id) }}">{{ opp.market.title }}</a></b> <a target="_blank" href="{{ opp.market.detail_url }}"><i class="fa fa-external-link"></i></a><br>
                     {{ opp.market.vendor.name }} {{ opp.market.sku }}, {{ as_money(opp.market.price) }} / {{ opp.market.quantity }}<br>
                     Market fees: {{ as_money(opp.market.market_fees) }}
                 </td>
+                <td>{{ as_quantity(opp.market.rank) }}</td>
                 <td>{{ as_money(opp.market.price) }}</td>
                 <td>{{ as_money(opp.cogs) }}</td>
                 <td>{{ as_money(opp.profit) }}</td>

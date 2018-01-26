@@ -35,6 +35,8 @@ def jinja_context_funcs():
     def as_percent(d, p=1):
         if d is None:
             return 'N/A'
+        if isinstance(d, float):
+            return f'{d * 100:.{p}f}%'
 
         depth = '.' + '0' * (p - 1) + '1'
         return str((d * 100).quantize(decimal.Decimal(depth))) + '%'
@@ -52,6 +54,10 @@ def jinja_context_funcs():
         return 'Yes' if b else 'No'
 
     def set_page_number(url, page):
+        if page is None:
+            url = re.sub(f'&?page=\d+', '', url)
+            return url[:-1] if url.endswith('?') else url
+
         if 'page=' in url:
             return re.sub(f'page=+\d','page=%d' % page, url)
         elif url.endswith('?'):
@@ -87,6 +93,13 @@ class User(db.Model, UserMixin):
     email = db.Column(db.String(128), index=True, unique=True)
     password_hash = db.Column(db.String(128))
 
+    def __init__(self, *args, **kwargs):
+        password = kwargs.pop('password', None)
+        super().__init__(*args, **kwargs)
+
+        if password:
+            self.set_password(password)
+
     def __repr__(self):
         return f'<{type(self).__name__} {self.username}>'
 
@@ -111,6 +124,16 @@ class Vendor(db.Model):
 
     def __repr__(self):
         return f'<{type(self).__name__} {self.name}>'
+
+    @staticmethod
+    def get_amazon():
+        amz = Vendor.query.filter_by(name='Amazon').first()
+        if amz is None:
+            amz = Vendor(name='Amazon', website='http://www.amazon.com')
+            db.session.add(amz)
+            db.session.commit()
+
+        return amz
 
 
 ########################################################################################################################
@@ -320,6 +343,29 @@ class Opportunity(db.Model):
         single_parent=True
     )
 
+    _m_alias = db.aliased(Product)
+    _s_alias = db.aliased(Product)
+
+    @classmethod
+    def _cogs_expr(cls):
+        return cls._s_alias.cost / cls._s_alias.quantity * cls._m_alias.quantity
+
+    @classmethod
+    def _revenue_expr(cls):
+        return cls._m_alias.price - cls._m_alias.market_fees
+
+    @classmethod
+    def _profit_expr(cls):
+        return cls._revenue_expr() - cls._cogs_expr()
+
+    @classmethod
+    def _margin_expr(cls):
+        return cls._profit_expr() / cls._m_alias.price
+
+    @classmethod
+    def _roi_expr(cls):
+        return cls._profit_expr() / cls._cogs_expr()
+
     @hybrid_property
     def revenue(self):
         try:
@@ -330,8 +376,13 @@ class Opportunity(db.Model):
     @revenue.expression
     def revenue(cls):
         return db.select([
-            db.cast(Product.price - Product.market_fees, CURRENCY)
-        ]).where(Product.id == cls.market_id).label('revenue')
+            db.cast(
+                cls._revenue_expr(),
+                CURRENCY
+            )
+        ]).where(
+            cls._m_alias.id == cls.market_id
+        ).label('revenue')
 
     @hybrid_property
     def cogs(self):
@@ -339,12 +390,17 @@ class Opportunity(db.Model):
 
     @cogs.expression
     def cogs(cls):
-        m_alias = db.aliased(Product)
-        s_alias = db.aliased(Product)
         return db.select([
-            db.cast(s_alias.cost / s_alias.quantity * m_alias.quantity, CURRENCY)
-        ]).where(db.and_(s_alias.id == cls.supply_id, m_alias.id == cls.market_id)).\
-            label('cogs')
+            db.cast(
+                cls._cogs_expr(),
+                CURRENCY
+            )
+        ]).where(
+            db.and_(
+                cls._s_alias.id == cls.supply_id,
+                cls._m_alias.id == cls.market_id
+            )
+        ).label('cogs')
 
     @hybrid_property
     def profit(self):
@@ -356,8 +412,16 @@ class Opportunity(db.Model):
     @profit.expression
     def profit(cls):
         return db.select([
-            db.cast(cls.revenue - cls.cogs, CURRENCY)
-        ]).label('profit')
+            db.cast(
+                cls._profit_expr(),
+                CURRENCY
+            )
+        ]).where(
+            db.and_(
+                cls._s_alias.id == cls.supply_id,
+                cls._m_alias.id == cls.market_id
+            )
+        ).label('profit')
 
     @hybrid_property
     def margin(self):
@@ -369,8 +433,16 @@ class Opportunity(db.Model):
     @margin.expression
     def margin(cls):
         return db.select([
-            db.cast(cls.profit / Product.price, CURRENCY)
-        ]).where(Product.id == cls.market_id).label('margin')
+            db.cast(
+                cls._margin_expr(),
+                CURRENCY
+            )
+        ]).where(
+            db.and_(
+                cls._s_alias.id == cls.supply_id,
+                cls._m_alias.id == cls.market_id
+            )
+        ).label('margin')
 
     @hybrid_property
     def roi(self):
@@ -382,8 +454,59 @@ class Opportunity(db.Model):
     @roi.expression
     def roi(cls):
         return db.select([
-            db.cast(cls.profit / cls.cogs, db.Numeric(19, 4))
-        ]).label('roi')
+            db.cast(
+                cls._profit_expr() / cls._cogs_expr(),
+                CURRENCY
+            )
+        ]).where(
+            db.and_(
+                cls._s_alias.id == cls.supply_id,
+                cls._m_alias.id == cls.market_id
+            )
+        ).label('roi')
+
+    @classmethod
+    def build_query(cls, query=None, max_cogs=None, min_profit=None, min_roi=None, min_similarity=None, max_rank=None,
+                    sort_by=None, sort_order=None):
+        q = cls.query
+
+        if query:
+            q_str = f'%{query}%'
+            q = q.join(
+                cls._m_alias,
+                cls.market_id == cls._m_alias.id
+            ).join(
+                cls._s_alias,
+                cls.supply_id == cls._s_alias.id
+            ).filter(
+                db.or_(
+                    cls._m_alias.title.ilike(q_str),
+                    cls._m_alias.sku.ilike(q_str),
+                    cls._m_alias.brand.ilike(q_str),
+                    cls._m_alias.model.ilike(q_str),
+                    cls._s_alias.title.ilike(q_str),
+                    cls._s_alias.sku.ilike(q_str),
+                    cls._s_alias.brand.ilike(q_str),
+                    cls._s_alias.model.ilike(q_str)
+                )
+            )
+
+        if max_cogs is not None:
+            q = q.filter(cls._cogs_expr() <= max_cogs)
+
+        if min_profit is not None:
+            q = q.filter(cls._profit_expr() >= min_profit)
+
+        if min_roi is not None:
+            q = q.filter(cls._roi_expr() >= min_roi)
+
+        if min_similarity is not None:
+            q = q.filter(cls.similarity >= min_similarity)
+
+        if max_rank is not None:
+            q = q.filter(cls._m_alias.rank <= max_rank)
+
+        return q
 
 
 ########################################################################################################################

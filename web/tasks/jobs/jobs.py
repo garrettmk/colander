@@ -1,7 +1,7 @@
 from celery import chain, chord
 from celery.utils.log import get_task_logger
 from app import celery_app
-from app.models import Product
+from app.models import Product, Vendor
 from tasks.ops.products import store_product_history, update_amazon_listing, update_fba_fees
 from tasks.parsed.products import GetCompetitivePricingForASIN
 from tasks.parsed.product_adv import ItemLookup
@@ -25,7 +25,7 @@ def track_amazon_products(**kwargs):
     print(kwargs)
     products = Product.build_query(**kwargs).all()
     for product in products:
-        if product.vendor_id != 1:
+        if product.vendor_id != Vendor.get_amazon().id:
             logger.warning(f'Cannot track product: {product.vendor.name} {product.sku}')
             continue
 

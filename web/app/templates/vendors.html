@@ -1,4 +1,4 @@
-{% extends "toplevel_base.html" %}
+{% extends "base.html" %}
 
 {% block scripts %}
     {{ super() }}
@@ -10,43 +10,57 @@
 {% endblock %}
 
 {% block modals %}
-<div class="modal fade" id="newVendorDialog" tabindex="-1" role="dialog" aria-hidden="true">
-    <div class="modal-dialog modal-lg" role="document">
-        <div class="modal-content">
+    <div class="modal fade" id="newVendorDialog" tabindex="-1" role="dialog" aria-hidden="true">
+        <div class="modal-dialog modal-lg" role="document">
+            <div class="modal-content">
+            </div>
         </div>
     </div>
-</div>
 {% endblock %}
 
-{% block toplevel_content %}
-<ul class="list-group">
-    <li class="list-group-item"><strong>Vendors: </strong>{{ vendors|length }}</li>
-    <li class="list-group-item"><strong>Products: </strong>{{ product_count }}</li>
-    <li class="list-group-item"><button id="newVendorBtn" type="button" class="btn btn-primary" data-toggle="modal" data-target="#newVendor">New Vendor</button></li>
-</ul>
+{% block navbar %}
+    {% set active_tab = 'vendors' %}
+    {% include 'navbar.html' %}
 {% endblock %}
 
-{% block table_content %}
-<table class="table table-striped table-bordered">
-    <thead>
-        <tr>
-            <th scope="col">id</th>
-            <th scope="col">Name</th>
-            <th scope="col">Website</th>
-            <th scope="col"># Products</th>
-            <th scope="col"></th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for vendor in vendors %}
-        <tr>
-            <th scope="row">{{ vendor.id }}</th>
-            <td>{{ vendor.name }}</td>
-            <td><a href="{{ vendor.website }}">{{ vendor.website }}</a></td>
-            <td>{{ vendor.products.count() }}</td>
-            <td><a class="btn btn-secondary" href="{{ url_for('vendor_details', vendor_id=vendor.id) }}">Details</a></td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+{% block content %}
+    <div class="navbar navbar-expand-lg navbar-dark bg-secondary">
+        <ul class="navbar-nav">
+            <li class="navbar-brand">Vendors</li>
+            <li class="nav-item">
+                <button id="newVendorBtn" type="button" class="btn btn-primary" data-toggle="modal" data-target="#newVendor">New</button>
+            </li>
+        </ul>
+    </div>
+    <div class="container-fluid mt-5">
+        <div class="row justify-content-start">
+            <div class="col">
+                Showing {{ vendors|length }} results:
+            </div>
+        </div>
+        <div class="row mt-3">
+            <div class="col">
+                <table class="table table-striped table-bordered">
+                    <thead>
+                        <tr>
+                            <th scope="col">id</th>
+                            <th scope="col">Name</th>
+                            <th scope="col">Website</th>
+                            <th scope="col"># Products</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for vendor in vendors %}
+                        <tr>
+                            <th scope="row">{{ vendor.id }}</th>
+                            <td><a href="{{ url_for('vendor_details', vendor_id=vendor.id) }}">{{ vendor.name }}</a></td>
+                            <td><a href="{{ vendor.website }}">{{ vendor.website }}</a></td>
+                            <td>{{ vendor.products.count() }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
 {% endblock %}
