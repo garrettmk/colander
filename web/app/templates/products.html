@@ -5,6 +5,23 @@
     <script>
         $(document).ready(function() {
             {{ macros.dynamic_form('newProductBtn', 'newProductDialog', url_for('new_product_form'), 'productForm', 'productFormSubmit') }}
+
+            $('#tagsFormSubmit').click(function() {
+                var selected = $('.productSelector:checked').map(function() {
+                    return this.value;
+                }).get();
+                var post_data = $('#tagsForm').serialize() + '&' + jQuery.param({ids:selected}, true);
+
+                $.post("{{ url_for('tag_products') }}", data=post_data, function(data) {
+                    $('#tagProductsDlg').modal('hide');
+                    if (data.status =='ok') {
+                        location.reload();
+                    } else {
+                        alert(data.message);
+                    }
+                });
+            });
+
         });
     </script>
 {% endblock %}
@@ -16,36 +33,72 @@
             </div>
         </div>
     </div>
+
+    <div class="modal fade" id="tagProductsDlg" tabindex="-1" role="dialog">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Tag Products</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                      <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <form id="tagsForm" action="{{ url_for('tag_products') }}" method="post">
+                        <div class="form-group">
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" id="addTagsRadio" type="radio" name="action" value="add">
+                                <label class="form-check-label" for="addTagsRadio">Add</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" id="removeTagsRadio" type="radio" name="action" value="remove">
+                                <label class="form-check-label" for="removeTagsRadio">Remove</label>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <div class="input-group">
+                                <select multiple class="form-control" data-role="tagsinput" name="tags"></select>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" id="tagsFormSubmit">Ok</button>
+                </div>
+            </div>
+        </div>
+    </div>
 {% endblock %}
 
 {% block navbar %}
     {% set active_tab = 'products' %}
-    {% include 'navbar.html' %}
+    {% include "navbar.html" %}
+{% endblock %}
+
+{% block subnav_contents %}
+    <ul class="navbar-nav mr-auto">
+        <li class="navbar-brand">Products</li>
+        <li class="nav-item">
+            <button id="newProductBtn" type="button" class="btn btn-primary" data-toggle="modal">New</button>
+        </li>
+    </ul>
 {% endblock %}
 
 {% block content %}
-    <div class="navbar navbar-expand-lg navbar-dark bg-secondary">
-        <ul class="navbar-nav">
-            <li class="navbar-brand">Products</li>
-            <li class="nav-item">
-                <button id="newProductBtn" type="button" class="btn btn-primary" data-toggle="modal">New</button>
-            </li>
-        </ul>
-    </div>
     <div class="container-fluid mt-3">
         <div class="row justify-content-start">
             <div class="col-2">
                 <form action="" method="get">
                     {{ macros.form_field(search_form.query) }}
                     {{ macros.form_field(search_form.vendor_id) }}
-                    {{ macros.form_tags(search_form.tags) }}
+                    {{ macros.form_field(search_form.tags, extra={'data-role': 'tagsinput'}) }}
                     {{ macros.form_submit(search_form.submit) }}
                 </form>
             </div>
         </div>
         <div class="row justify-content-start mt-5">
             <div class="col">
-                Showing {{ result_count }} results:
+                Showing {{ as_quantity(result_count) }} results:
             </div>
         </div>
         <div class="row mt-3">
@@ -56,41 +109,41 @@
                             <th scope="col">id</th>
                             <th scope="col">Vendor</th>
                             <th scope="col">SKU</th>
-                            <th scope="col">Rank</th>
+                            <th scope="col">Category</th>
+                            <th scope="col" class="text-right">Rank</th>
                             <th scope="col">Title</th>
-                            <th scope="col">Quantity</th>
-                            <th scope="col">Price</th>
-                            <th scope="col"></th>
+                            <th scope="col" class="text-right">Quantity</th>
+                            <th scope="col" class="text-right">Price</th>
+                            <th scope="col" class="text-center">
+                                <div class="dropdown">
+                                    <button class="btn btn-outline-primary dropdown-toggle" type="button" data-toggle="dropdown">Actions</button>
+                                    <div class="dropdown-menu">
+                                        <button class="dropdown-item" type="button" data-target="#tagProductsDlg" data-toggle="modal">Tag</button>
+                                        <div class="dropdown-divider"></div>
+                                        <button class="dropdown-item" type="button" onclick="$('.productSelector').prop('checked', true)">Select All</button>
+                                    </div>
+                                </div>
+                            </th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for product in products.items %}
                         <tr>
                             <th scope="row">{{ product.id }}</th>
-                            <td>{{ product.vendor.name }}</td>
+                            <td><a href="{{ url_for('vendor_details', vendor_id=product.vendor_id) }}">{{ product.vendor.name }}</a></td>
                             <td>{{ product.sku }}</td>
-                            <td>{{ as_quantity(product.rank) }}</td>
+                            <td>{{ product.category }}</td>
+                            <td class="text-right">{{ as_quantity(product.rank) }}</td>
                             <td>
                                 <a href="{{ url_for('product_details', product_id=product.id) }}">{{ product.title }}</a>
-                                <a target="_blank" href="{{ product.detail_url }}"><i class="fa fa-external-link"></i></a><br>
+                                {{ macros.external_link(product.detail_url) }}<br>
                                 {% if product.tags %}{% for tag in product.tags %}
                                     <span class="badge badge-primary">{{ tag }}</span>
                                 {% endfor %}{% endif %}
                             </td>
-                            <td>{{ product.quantity }}</td>
-                            <td>{{ as_money(product.price) }}</td>
-                            <td>
-                                <div class="dropdown">
-                                    <button id="actionDrop-{{ product.id }}" class="btn btn-secondary dropdown-toggle" type="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                                        Actions
-                                    </button>
-                                    <div class="dropdown-menu" aria-labelledby="actionDrop-{{ product.id }}">
-                                        <a class="dropdown-item" target="_blank" href="{{ product.detail_url }}">Open...</a>
-                                        <a class="dropdown-item" href="{{ url_for('product_details', product_id=product.id) }}">Edit</a>
-                                        <a class="dropdown-item" href="#">Delete</a>
-                                    </div>
-                                </div>
-                            </td>
+                            <td class="text-right">{{ product.quantity }}</td>
+                            <td class="text-right">{{ as_money(product.price) }}</td>
+                            <td class="text-center"><input type="checkbox" class="productSelector" value="{{ product.id }}"></td>
                         </tr>
                         {% endfor %}
                     </tbody>

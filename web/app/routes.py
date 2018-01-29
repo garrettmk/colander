@@ -322,6 +322,26 @@ def delete_product():
     return jsonify(status='ok')
 
 
+@app.route('/products/tag', methods=['POST'])
+def tag_products():
+    action = request.form.get('action')
+    tags = request.form.getlist('tags')
+    ids = [int(i) for i in request.form.getlist('ids')]
+    products = Product.query.filter(Product.id.in_(ids)).all()
+
+    for product in products:
+        product_tags = product.tags if product.tags is not None else []
+        if action == 'add':
+            product.tags = list(set(product_tags + tags))
+        elif action == 'remove':
+            product.tags = [tag for tag in product_tags if tag not in tags]
+        else:
+            db.session.rollback()
+            return jsonify(status='error', message=f'Invalid action: {action}')
+
+    db.session.commit()
+    return jsonify(status='ok')
+
 ########################################################################################################################
 # Opportunities
 
@@ -331,13 +351,18 @@ def delete_product():
 def opportunities():
     scale = lambda f: f/100 if f else f
     form = SearchOpportunitiesForm(request.args)
+    form.tags.choices = [(tag, tag) for tag in request.args.getlist('tags')]
     opps = Opportunity.build_query(
         query=request.args.get('query'),
+        tags=request.args.getlist('tags'),
         max_cogs=request.args.get('max_cogs', type=float),
         min_profit=request.args.get('min_profit', type=float),
         min_roi=scale(request.args.get('min_roi', type=float)),
         min_similarity=scale(request.args.get('min_similarity', type=float)),
-        max_rank=request.args.get('max_rank', type=int)
+        min_rank=request.args.get('min_rank', type=int),
+        max_rank=request.args.get('max_rank', type=int),
+        sort_by=request.args.get('sort_by'),
+        sort_order=request.args.get('sort_order'),
     ).paginate(per_page=app.config['MAX_PAGE_ITEMS'])
 
     return render_template(

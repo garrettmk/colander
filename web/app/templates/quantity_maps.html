@@ -89,13 +89,8 @@
                                 <td>{{ qmap.text }}</td>
                                 <td>{{ qmap.quantity }}</td>
                                 <td>
-                                    <div class="dropdown">
-                                        <button id="actionDrop-{{ qmap.id }}" class="btn btn-secondary dropdown-toggle" type="button" data-toggle="dropdown">Actions</button>
-                                        <div class="dropdown-menu">
-                                            <button class="dropdown-item" type="button" onclick="edit_qmap('{{ url_for('edit_quantity_map_form', qmap_id=qmap.id) }}')">Edit</button>
-                                            <button class="dropdown-item" type="button" onclick="delete_qmap({{ qmap.id }});">Delete</button>
-                                        </div>
-                                    </div>
+                                    <button class="btn btn-primary" type="button" onclick="edit_qmap('{{ url_for('edit_quantity_map_form', qmap_id=qmap.id) }}')">Edit</button>
+                                    <button class="btn btn-danger" type="button" onclick="delete_qmap({{ qmap.id }});">Delete</button>
                                 </td>
                             </tr>
                         {% else %}
@@ -104,7 +99,8 @@
                             </tr>
                         {% endfor %}
                     </tbody>
-                </table>                {{ macros.show_pages(qmaps, url_for('quantity_maps')) }}
+                </table>
+                {{ macros.show_pages(qmaps, url_for('quantity_maps')) }}
             </div>
         </div>
     </div>

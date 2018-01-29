@@ -9,23 +9,23 @@
             <li class="nav-item">
                 <a class="nav-link {% if active_tab == 'vendors' %}active{% endif %}" href="{{ url_for('vendors') }}">Vendors</a>
             </li>
-            <li>
+            <li class="nav-item">
                 <a class="nav-link {% if active_tab == 'products' %}active{% endif %}" href="{{ url_for('products') }}">Products</a>
             </li>
-            <li>
+            <li class="nav-item">
                 <a class="nav-link {% if active_tab == 'quantity_maps' %}active{% endif %}" href="{{ url_for('quantity_maps') }}">Quantity Maps</a>
             </li>
-            <li>
+            <li class="nav-item">
                 <a class="nav-link {% if active_tab == 'opportunities' %}active{% endif %}" href="{{ url_for('opportunities') }}">Opportunities</a>
             </li>
-            <li>
+            <li class="nav-item">
                 <a class="nav-link {% if active_tab == 'jobs' %}active{% endif %}" href="{{ url_for('jobs') }}">Jobs</a>
             </li>
         </ul>
         {% if current_user.is_authenticated %}
         <ul class="navbar-nav navbar-right">
-            <li>
-                <a class="nav-link text-light mr-sm-2" href="{{ url_for('logout') }}">Logout</a>
+            <li class="nav-item">
+                <a class="nav-link mr-sm-2" href="{{ url_for('logout') }}">Logout</a>
             </li>
         </ul>
         {% endif %}

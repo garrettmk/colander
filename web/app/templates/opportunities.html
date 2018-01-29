@@ -4,31 +4,67 @@
     {{ super() }}
 {% endblock %}
 
+
 {% block navbar %}
     {% set active_tab = 'opportunities' %}
     {% include 'navbar.html' %}
 {% endblock %}
 
+
+{% block subnav_contents %}
+    <ul class="navbar-nav">
+        <li class="navbar-brand">Opportunities</li>
+        <li class="nav-item">
+            <button id="newOpportunityBtn" type="button" class="btn btn-primary" data-toggle="modal">New</button>
+        </li>
+    </ul>
+{% endblock %}
+
+
 {% block content %}
-   <div class="navbar navbar-expand-lg navbar-dark bg-secondary">
-        <ul class="navbar-nav">
-            <li class="navbar-brand">Opportunities</li>
-            <li class="nav-item">
-                <button id="newOpportunityBtn" type="button" class="btn btn-primary" data-toggle="modal">New</button>
-            </li>
-        </ul>
-    </div>
     <div class="container-fluid mt-3">
         <div class="row justify-content-start">
             <div class="col-2">
                 <form action="" method="get">
                     {{ macros.form_field(form.query) }}
-                    {{ macros.form_field(form.max_cogs, prepend='$') }}
-                    {{ macros.form_field(form.min_profit, prepend='$') }}
-                    {{ macros.form_field(form.min_roi, append='%') }}
-                    {{ macros.form_field(form.min_similarity, append='%') }}
-                    {{ macros.form_field(form.max_rank) }}
-                    {{ macros.form_submit(form.submit) }}
+                    {{ macros.form_tags(form.tags) }}
+                    <div class="form-row">
+                        <div class="col">
+                            {{ macros.form_field(form.max_cogs, prepend='$') }}
+                        </div>
+                        <div class="col">
+                            {{ macros.form_field(form.min_profit, prepend='$') }}
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="col">
+                            {{ macros.form_field(form.min_roi, append='%') }}
+                        </div>
+                        <div class="col">
+                            {{ macros.form_field(form.min_similarity, append='%') }}
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="col">
+                            {{ macros.form_field(form.min_rank) }}
+                        </div>
+                        <div class="col">
+                            {{ macros.form_field(form.max_rank) }}
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="col">
+                            {{ macros.form_field(form.sort_by) }}
+                        </div>
+                        <div class="col">
+                            {{ macros.form_field(form.sort_order) }}
+                        </div>
+                    </div>
+                    <div class="form-row pull-right">
+                        <div class="col">
+                            {{ macros.form_submit(form.submit) }}
+                        </div>
+                    </div>
                 </form>
             </div>
         </div>

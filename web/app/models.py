@@ -466,28 +466,55 @@ class Opportunity(db.Model):
         ).label('roi')
 
     @classmethod
-    def build_query(cls, query=None, max_cogs=None, min_profit=None, min_roi=None, min_similarity=None, max_rank=None,
-                    sort_by=None, sort_order=None):
-        q = cls.query
+    def build_query(cls, query=None, tags=None, max_cogs=None, min_profit=None, min_roi=None, min_similarity=None,
+                    min_rank=None, max_rank=None, sort_by=None, sort_order=None):
 
-        if query:
+        q = cls.query.join(
+            cls._m_alias,
+            cls.market_id == cls._m_alias.id
+        ).join(
+            cls._s_alias,
+            cls.supply_id == cls._s_alias.id
+        )
+
+        if query or tags:
             q_str = f'%{query}%'
-            q = q.join(
-                cls._m_alias,
-                cls.market_id == cls._m_alias.id
-            ).join(
-                cls._s_alias,
-                cls.supply_id == cls._s_alias.id
-            ).filter(
+            tags_json = json.dumps(tags)
+
+            query_conditions = [
+                cls._m_alias.title.ilike(q_str),
+                cls._m_alias.sku.ilike(q_str),
+                cls._m_alias.brand.ilike(q_str),
+                cls._m_alias.model.ilike(q_str),
+                cls._s_alias.title.ilike(q_str),
+                cls._s_alias.sku.ilike(q_str),
+                cls._s_alias.brand.ilike(q_str),
+                cls._s_alias.model.ilike(q_str)
+            ] if query else []
+
+            tag_conditions = [
+                db.func.json_contains(cls._m_alias.tags, tags_json),
+                db.func.json_contains(cls._s_alias.tags, tags_json)
+            ] if tags else []
+
+            q = q.filter(
                 db.or_(
-                    cls._m_alias.title.ilike(q_str),
-                    cls._m_alias.sku.ilike(q_str),
-                    cls._m_alias.brand.ilike(q_str),
-                    cls._m_alias.model.ilike(q_str),
-                    cls._s_alias.title.ilike(q_str),
-                    cls._s_alias.sku.ilike(q_str),
-                    cls._s_alias.brand.ilike(q_str),
-                    cls._s_alias.model.ilike(q_str)
+                    *query_conditions,
+                    *tag_conditions
+                )
+            )
+
+        if tags:
+            q = q.filter(
+                db.or_(
+                    db.func.json_contains(
+                        cls._m_alias.tags,
+                        json.dumps(tags)
+                    ),
+                    db.func.json_contains(
+                        cls._s_alias.tags,
+                        json.dumps(tags)
+                    )
                 )
             )
 
@@ -503,8 +530,26 @@ class Opportunity(db.Model):
         if min_similarity is not None:
             q = q.filter(cls.similarity >= min_similarity)
 
+        if min_rank is not None:
+            q = q.filter(cls._m_alias.rank >= min_rank)
+
         if max_rank is not None:
             q = q.filter(cls._m_alias.rank <= max_rank)
+
+        sort_field = None
+        if sort_by == 'rank':
+            sort_field = cls._m_alias.rank
+        elif sort_by == 'cogs':
+            sort_field = cls._cogs_expr()
+        elif sort_by == 'profit':
+            sort_field = cls._profit_expr()
+        elif sort_by == 'roi':
+            sort_field = cls._roi_expr()
+        elif sort_by == 'similarity':
+            sort_field = cls.similarity
+
+        if sort_field is not None:
+            q = q.order_by(sort_field.asc() if sort_order == 'asc' else sort_field.desc())
 
         return q
 

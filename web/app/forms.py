@@ -141,17 +141,20 @@ class EditJobForm(FlaskForm):
 
 class SearchOpportunitiesForm(FlaskForm):
     query = StringField('Keywords', validators=[Optional()])
-    max_cogs = DecimalField('Maximum Cost of Goods Sold (COGS)', validators=[Optional()])
-    min_profit = DecimalField('Minimum Profit', validators=[Optional()])
-    min_roi = DecimalField('Minimum Return On Investment (ROI)', validators=[Optional()])
-    min_similarity = DecimalField('Minimum similarity', validators=[Optional(), NumberRange(min=0, max=100)])
-    max_rank = IntegerField('Maximum rank', validators=[Optional(), NumberRange(min=0)])
+    tags = TagsField('Tags', validators=[Optional()])
+    max_cogs = DecimalField('Max. COGS', validators=[Optional()])
+    min_profit = DecimalField('Min. profit', validators=[Optional()])
+    min_roi = DecimalField('Min. ROI', validators=[Optional()])
+    min_similarity = DecimalField('Min. similarity', validators=[Optional(), NumberRange(min=0, max=100)])
+    min_rank = IntegerField('Min. rank', validators=[Optional(), NumberRange(min=0)])
+    max_rank = IntegerField('Max. rank', validators=[Optional(), NumberRange(min=0)])
     sort_by = SelectField('Sort by', choices=[
+        (None, 'None'),
         ('rank', 'Rank'),
         ('cogs', 'COGS'),
         ('profit', 'Profit'),
         ('roi', 'ROI'),
         ('similarity', 'Similarity')
     ])
-    sort_direction = SelectField('Asc/Desc', choices=[('asc', 'Ascending'), ('desc', 'Descending')])
+    sort_order = SelectField('Order', choices=[('asc', 'Ascending'), ('desc', 'Descending')])
     submit = SubmitField('Search')

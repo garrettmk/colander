@@ -1,36 +1,49 @@
 {# Macros for rendering form controls. #}
-{% macro form_field(elem, prepend='', append='') -%}
+{% macro form_field_basic(elem, prepend='', append='', add_class='', extra={}) %}
+    {% do kwargs.update(extra) %}
+    <div class="input-group">
+        {%- if prepend -%}
+            <div class="input-group-prepend">
+                <span class="input-group-text">{{ prepend }}</span>
+            </div>
+        {%- endif %}
+        {%- if elem.errors -%}
+            {{ elem(class_='form-control is-invalid ' + add_class, **kwargs) }}
+        {%- else -%}
+            {{ elem(class_='form-control ' + add_class, **kwargs) }}
+        {%- endif -%}
+        {%  if append %}
+            <div class="input-group-append">
+                <span class="input-group-text">{{ append }}</span>
+            </div>
+        {% endif %}
+        <div class="invalid-feedback">
+            {% for error in elem.errors %}{{ error }}{% endfor %}
+        </div>
+    </div>
+{% endmacro %}
+
+{# Form field with label above #}
+{% macro form_field(elem) -%}
     <div class="form-group">
         {{ elem.label }}
-        <div class="input-group">
-            {%- if prepend -%}
-                <div class="input-group-prepend">
-                    <span class="input-group-text">{{ prepend }}</span>
-                </div>
-            {%- endif %}
-            {%- if elem.errors -%}
-                {{ elem(class_='form-control is-invalid', **kwargs) }}
-            {%- else -%}
-                {{ elem(class_='form-control', **kwargs) }}
-            {%- endif -%}
-            {%  if append %}
-                <div class="input-group-append">
-                    <span class="input-group-text">{{ append }}</span>
-                </div>
-            {% endif %}
-            <div class="invalid-feedback">
-                {% for error in elem.errors %}{{ error }}{% endfor %}
-            </div>
-        </div>
+        {{ form_field_basic(elem, **kwargs) }}
     </div>
 {%- endmacro %}
 
-{% macro form_check(elem) -%}
+
+{# Inline field with placeholder instead of label #}
+{% macro form_field_inline(elem) %}
+    {{ form_field_basic(elem, placeholder=elem.label.text, **kwargs) }}
+{% endmacro %}
+
+
+{% macro form_check(elem, add_class='') -%}
     <div class="input-group">
         {% if elem.errors %}
-            <div class="form-check">{{ elem(class_='form-check-input is-invalid', **kwargs) }}{{ elem.label }}</div>
+            <div class="form-check">{{ elem(class_='form-check-input is-invalid ' + add_class, **kwargs) }}{{ elem.label }}</div>
         {% else %}
-            <div class="form-check">{{ elem(class_='form-check-input', **kwargs) }}{{ elem.label }}</div>
+            <div class="form-check">{{ elem(class_='form-check-input ' + add_class, **kwargs) }}{{ elem.label }}</div>
         {% endif %}
         <div class="invalid-feedback">
             {% for error in elem.errors %}{{ error }}{% endfor %}
@@ -38,9 +51,11 @@
     </div>
 {%- endmacro %}
 
-{% macro form_submit(elem) -%}
-    {{ elem(class_='btn btn-primary', **kwargs) }}
+
+{% macro form_submit(elem, add_class='') -%}
+    {{ elem(class_='btn btn-primary ' + add_class, **kwargs) }}
 {%- endmacro %}
+
 
 {% macro form_tags(elem) -%}
     {% do kwargs.update({'data-role': 'tagsinput'}) %}
@@ -100,6 +115,22 @@ $('#' + '{{ button_id }}').click(function() {
 });
 {% endmacro %}
 
+
+{# An external link, opens in a new tab and includes a little icon. #}
+{% macro external_link(href, label=None) %}
+    <a target="_blank" href="{{ href }}">{% if label %}{{ label }} {% endif %}<i class="fa fa-external-link"></i></a>
+{% endmacro %}
+
+
+{# Render tags #}
+{% macro render_tags(tags) %}
+    {% for tag in tags %}
+        <span class="badge badge-primary">{{ tag }}</span>
+    {% endfor %}
+{% endmacro %}
+
+
+{# Render a table of Opportunities. #}
 {% macro opp_table(opps) %}
     <table class="table table-striped table-bordered">
         <thead>
@@ -118,27 +149,38 @@ $('#' + '{{ button_id }}').click(function() {
         </thead>
         <tbody>
             {% for opp in opps %}
-            <tr>
-                <td><b>{{ opp.id }}</b></td>
-                <td>
-                    <b><a href="{{ url_for('product_details', product_id=opp.supply_id) }}">{{ opp.supply.title }}</a></b> <a target="_blank" href="{{ opp.supply.detail_url }}"><i class="fa fa-external-link"></i></a><br>
-                    {{ opp.supply.vendor.name }} {{ opp.supply.sku }}, {{ as_money(opp.supply.price) }} / {{ opp.supply.quantity }}<br>
-                    Shipping: {{ as_percent(opp.supply.vendor.ship_rate) }}
-                </td>
-                <td>{{ as_percent(opp.similarity) }}</td>
-                <td>
-                    <b><a href="{{ url_for('product_details', product_id=opp.market_id) }}">{{ opp.market.title }}</a></b> <a target="_blank" href="{{ opp.market.detail_url }}"><i class="fa fa-external-link"></i></a><br>
-                    {{ opp.market.vendor.name }} {{ opp.market.sku }}, {{ as_money(opp.market.price) }} / {{ opp.market.quantity }}<br>
-                    Market fees: {{ as_money(opp.market.market_fees) }}
-                </td>
-                <td>{{ as_quantity(opp.market.rank) }}</td>
-                <td>{{ as_money(opp.market.price) }}</td>
-                <td>{{ as_money(opp.cogs) }}</td>
-                <td>{{ as_money(opp.profit) }}</td>
-                <td>{{ as_percent(opp.margin) }}</td>
-                <td>{{ as_percent(opp.roi) }}</td>
-            </tr>
+                <tr>
+                    <td><b>{{ opp.id }}</b></td>
+                    <td>
+                        <div class="img-thumbnail img-frame float-left mr-2" style="width: 6rem; height: 6rem;">
+                            <img src="{{ opp.supply.image_url }}" style="max-width: 100%; max-height: 100%">
+                        </div>
+                        <b><a href="{{ url_for('product_details', product_id=opp.supply_id) }}">{{ opp.supply.title }}</a></b>
+                        {{ external_link(opp.supply.detail_url) }}
+                        {{ render_tags(opp.supply.tags) }}<br>
+                        {{ opp.supply.vendor.name }} {{ opp.supply.sku }}, {{ as_money(opp.supply.price) }} / {{ opp.supply.quantity }}<br>
+                        Shipping: {{ as_percent(opp.supply.vendor.ship_rate) }}
+                    </td>
+                    <td>{{ as_percent(opp.similarity) }}</td>
+                    <td>
+                        <div class="img-thumbnail img-frame float-left mr-2" style="width: 6rem; height: 6rem;">
+                            <img src="{{ opp.market.image_url }}" style="max-width: 100%; max-height: 100%">
+                        </div>
+                        <b><a href="{{ url_for('product_details', product_id=opp.market_id) }}">{{ opp.market.title }}</a></b>
+                        {{ external_link(opp.market.detail_url) }}
+                        {{ render_tags(opp.market.tags) }}<br>
+                        {{ opp.market.vendor.name }} {{ opp.market.sku }}, {{ as_money(opp.market.price) }} / {{ opp.market.quantity }}<br>
+                        Market fees: {{ as_money(opp.market.market_fees) }}
+                    </td>
+                    <td>{{ as_quantity(opp.market.rank) }}</td>
+                    <td>{{ as_money(opp.market.price) }}</td>
+                    <td>{{ as_money(opp.cogs) }}</td>
+                    <td>{{ as_money(opp.profit) }}</td>
+                    <td>{{ as_percent(opp.margin) }}</td>
+                    <td>{{ as_percent(opp.roi) }}</td>
+                </tr>
             {% endfor %}
         </tbody>
     </table>
 {% endmacro %}
+

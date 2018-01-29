@@ -139,7 +139,9 @@ def quantity_map_updated(self, qmap_id):
             Product.title.ilike(f'%{qmap.text}%')
         )
     ).update(
-        {'quantity': qmap.quantity},
+        {
+            'quantity': qmap.quantity
+        },
         synchronize_session=False
     )
 
