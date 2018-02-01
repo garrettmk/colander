@@ -5,7 +5,7 @@
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-        <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta.3/css/bootstrap.min.css" integrity="sha384-Zug+QiDoJOrZ5t4lssLdxGhVrurbmBWopoEl+M6BdEfwnCJZtKxi1KgxUyJq13dy" crossorigin="anonymous">
+        <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
         <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/font-awesome/4.1.0/css/font-awesome.min.css">
         <link rel="stylesheet" href="{{ url_for('static', filename='tagsinput.css') }}">
         <link rel="stylesheet" href="{{ url_for('static', filename='colander.css') }}">
@@ -19,30 +19,42 @@
         {% block modals %}
         {% endblock %}
 
-        {% block navbar %}
-            {% include "navbar.html" %}
+        <!-- Navbar -->
+        <nav class="navbar navbar-expand-sm navbar-dark bg-dark pl-0">
+            <a class="navbar-brand col mr-auto" href="{{ url_for('index') }}"><h3>Colander</h3></a>
+            <div class="col-10">
+                {% block navbar %}
+                {% endblock %}
+            </div>
+            <div class="col d-flex justify-content-end">
+                {% if current_user.is_authenticated %}
+                <ul class="navbar-nav navbar-right">
+                    <li class="nav-item">
+                        <a class="nav-link mr-sm-2" href="{{ url_for('logout') }}">Logout</a>
+                    </li>
+                </ul>
+                {% endif %}
+            </div>
+        </nav>
+
+        {% block base_content %}
         {% endblock %}
 
-        <div class="navbar navbar-expand-lg navbar-dark bg-secondary">
-            {% block subnav_contents %}
-            {% endblock %}
-        </div>
-
-        {% with messages = get_flashed_messages() %}
-            {% for message in messages %}
-                <div class="alert alert-warning alert-dismissible fade show" role="alert">
-                    {{ message }}
-                    <button type="button" class="close" data-dismiss="alert" aria-label="Close">
-                        <span aria-hidden="true">&times;</span>
-                    </button>
-                </div>
-            {% endfor %}
-        {% endwith %}
-        {% block content %}{% endblock %}
+        <!-- Bootstrap + requirements -->
         <script src="https://code.jquery.com/jquery-3.2.1.min.js" crossorigin="anonymous"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
         <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta.3/js/bootstrap.min.js" integrity="sha384-a5N7Y/aK3qNeh15eJKGWxsqtnX/wWdSZSKp+81YjTmS15nvnvxKHuzaWwXHDli+4" crossorigin="anonymous"></script>
+
+        <!-- Icons -->
+        <script src="https://unpkg.com/feather-icons/dist/feather.min.js"></script>
+        <script>
+            feather.replace()
+        </script>
+
+        <!-- Tag input boxes -->
         <script src="{{ url_for('static', filename='tagsinput.js') }}"></script>
+
+        <!-- Page-specific scripts -->
         {% block scripts %}{% endblock %}
     </body>
 </html>

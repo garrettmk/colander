@@ -16,6 +16,11 @@ from tasks.parsed.product_adv import ItemLookup
 from tasks.jobs import dummy
 
 
+@app.route('/test')
+def test():
+    return render_template('test.html')
+
+
 ########################################################################################################################
 # Index & user login
 
@@ -23,7 +28,7 @@ from tasks.jobs import dummy
 @app.route('/index')
 @login_required
 def index():
-    return render_template('index.html')
+    return render_template('index.html', title=f'Welcome, {current_user.username}')
 
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -150,6 +155,7 @@ def vendor_details(vendor_id):
     product_page = vendor.products.paginate(page_num, app.config['MAX_PAGE_ITEMS'], False)
     return render_template(
         'vendor_details.html',
+        title=vendor.name,
         vendor=vendor,
         product_page=product_page
     )
@@ -291,6 +297,7 @@ def product_details(product_id):
 
     return render_template(
         'product_details.html',
+        title=product.title,
         product=product,
         opps_page=opps,
         history=history

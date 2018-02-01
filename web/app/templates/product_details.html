@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "secondary_base.html" %}
 
 {% block scripts %}
     {{ super() }}
@@ -82,86 +82,79 @@
     </div>
 {% endblock %}
 
-{% block navbar %}
+{% block sidebar %}
     {% set active_tab = 'products' %}
-    {% include 'navbar.html' %}
+    {% include 'sidebar_nav.html' %}
+    {% include 'products_nav.html' %}
 {% endblock %}
 
-{% block subnav_contents %}
-    <ul class="navbar-nav mr-auto">
-        <li class="navbar-brand">{{ product.title }}</li>
-        <li class="nav-item">
-            <button id="editProductBtn" type="button" class="btn btn-primary">Edit</button>
-        </li>
-        <li class="nav-item">
-            <a class="btn btn-primary ml-2" href="{{ product.detail_url }}">Open...</a>
-        </li>
-    </ul>
-    <ul class="navbar-nav navbar-right">
-        <li class="nav-item">
-            <button id="deleteProductBtn" type="button" class="btn btn-danger">Delete</button>
-        </li>
-    </ul>
+{% block document_tools %}
+    <button id="editProductBtn" type="button" class="btn btn-sm btn-outline-secondary">
+        <span data-feather="edit-2"></span>
+        Edit
+    </button>
+    <button id="deleteProductBtn" type="button" class="btn btn-sm btn-outline-danger ml-2">
+        <span data-feather="x"></span>
+        Delete
+    </button>
 {% endblock %}
 
 {% block content %}
-    <div class="container-fluid mt-3">
-        <div class="row justify-content-start">
-            <div class="col-3">
-                <div class="img-thumbnail img-frame">
-                    <img style="max-width: 100%; max-height: 100%;" src="{{ product.image_url }}">
-                </div>
-            </div>
-            <div class="col-4">
-                <table class="table mt-4">
-                    <tbody>
-                        <tr>
-                            <th scope="row">Tags</th>
-                            <td>
-                                {% for tag in product.tags %}
-                                    <span class="badge badge-primary">{{ tag }}</span>
-                                {% endfor %}
-                            </td>
-                        </tr>
-                        <tr>
-                            <th scope="row">Vendor/SKU</th>
-                            <td>{{ product.vendor.name }} {{ product.sku }}</td>
-                        </tr>
-                        <tr>
-                            <th scope="row">Rank</th>
-                            <td>{{ product.rank }}</td>
-                        </tr>
-                        <tr>
-                            <th scope="row">Price</th>
-                            <td>{{ as_money(product.price) }}</td>
-                        </tr>
-                        <tr>
-                            <th scope="row">Quantity</th>
-                            <td>{{ product.quantity }} ({{ product.quantity_desc }})</td>
-                        </tr>
-                        <tr>
-                            <th scope="row">Brand/Model</th>
-                            <td>{{ product.brand }} {{ product.model }}</td>
-                        </tr>
-                        <tr>
-                            <td colspan="2">{{ product.description }}</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-            <div class="col border border-primary">
-                <div class="chart-container border border-danger" style="position: relative; width: 95%; height: 95%">
-                    <canvas class="border border-secondary" id="chart" style="width: 95%; height: 95%"></canvas>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="container-fluid mt-5">
-        <div class="row">
-            <div class="col mx-auto my-auto">
-                {{ macros.opp_table(opps_page.items) }}
-                {{ macros.show_pages(opps_page, url_for('product_details', product_id=product.id)) }}
-            </div>
-        </div>
-    </div>
+{#    <div class="row justify-content-start">#}
+{#        <div class="col-3">#}
+{#            <div class="img-thumbnail img-frame">#}
+{#                <img class="framed-img" src="{{ product.image_url }}">#}
+{#            </div>#}
+{#        </div>#}
+{#        <div class="col-4">#}
+{#            <table class="table mt-4">#}
+{#                <tbody>#}
+{#                    <tr>#}
+{#                        <th scope="row">Tags</th>#}
+{#                        <td>#}
+{#                            {% for tag in product.tags %}#}
+{#                                <span class="badge badge-primary">{{ tag }}</span>#}
+{#                            {% endfor %}#}
+{#                        </td>#}
+{#                    </tr>#}
+{#                    <tr>#}
+{#                        <th scope="row">Vendor/SKU</th>#}
+{#                        <td>{{ product.vendor.name }} {{ product.sku }}</td>#}
+{#                    </tr>#}
+{#                    <tr>#}
+{#                        <th scope="row">Rank</th>#}
+{#                        <td>{{ product.rank }}</td>#}
+{#                    </tr>#}
+{#                    <tr>#}
+{#                        <th scope="row">Price</th>#}
+{#                        <td>{{ as_money(product.price) }}</td>#}
+{#                    </tr>#}
+{#                    <tr>#}
+{#                        <th scope="row">Quantity</th>#}
+{#                        <td>{{ product.quantity }} ({{ product.quantity_desc }})</td>#}
+{#                    </tr>#}
+{#                    <tr>#}
+{#                        <th scope="row">Brand/Model</th>#}
+{#                        <td>{{ product.brand }} {{ product.model }}</td>#}
+{#                    </tr>#}
+{#                    <tr>#}
+{#                        <td colspan="2">{{ product.description }}</td>#}
+{#                    </tr>#}
+{#                </tbody>#}
+{#            </table>#}
+{#        </div>#}
+{#        <div class="col-5 border border-primary">#}
+{#            <div class="chart-container border border-danger" style="position: relative; width: 95%; height: 95%">#}
+{#                <canvas class="border border-secondary" id="chart" style="width: 95%; height: 95%"></canvas>#}
+{#            </div>#}
+{#        </div>#}
+{#    </div>#}
+{#    <div class="container-fluid mt-5">#}
+{#        <div class="row">#}
+{#            <div class="col mx-auto my-auto">#}
+{#                {{ macros.opp_table(opps_page.items) }}#}
+{#                {{ macros.show_pages(opps_page, url_for('product_details', product_id=product.id)) }}#}
+{#            </div>#}
+{#        </div>#}
+{#    </div>#}
 {% endblock %}

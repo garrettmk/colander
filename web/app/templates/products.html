@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "secondary_base.html" %}
 
 {% block scripts %}
     {{ super() }}
@@ -70,86 +70,91 @@
     </div>
 {% endblock %}
 
-{% block navbar %}
+{% block sidebar %}
     {% set active_tab = 'products' %}
-    {% include "navbar.html" %}
+    {% include "sidebar_nav.html" %}
+    {% include "products_nav.html" %}
 {% endblock %}
 
-{% block subnav_contents %}
-    <ul class="navbar-nav mr-auto">
-        <li class="navbar-brand">Products</li>
-        <li class="nav-item">
-            <button id="newProductBtn" type="button" class="btn btn-primary" data-toggle="modal">New</button>
-        </li>
-    </ul>
+{% block document_tools %}
+    <div class="btn-group btn-group-sm" role="group">
+        <button id="newProductBtn" class="btn btn-outline-secondary" data-toggle="modal">
+            <span data-feather="plus"></span>
+            New
+        </button>
+        <div class="btn-group btn-group-sm">
+            <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-toggle="dropdown">
+                Import
+            </button>
+            <div class="dropdown-menu dropdown-menu-right">
+                <a class="dropdown-item">From Amazon...</a>
+                <a class="dropdown-item">From file...</a>
+            </div>
+        </div>
+    </div>
 {% endblock %}
 
 {% block content %}
-    <div class="container-fluid mt-3">
-        <div class="row justify-content-start">
-            <div class="col-2">
-                <form action="" method="get">
-                    {{ macros.form_field(search_form.query) }}
-                    {{ macros.form_field(search_form.vendor_id) }}
-                    {{ macros.form_field(search_form.tags, extra={'data-role': 'tagsinput'}) }}
-                    {{ macros.form_submit(search_form.submit) }}
-                </form>
+    <form class="col-md col-lg-8 col-xl-6" action="" method="get">
+        <div class="row">
+            <div class="col-md">
+                {{ macros.form_field(search_form.query) }}
+            </div>
+            <div class="col-md">
+                {{ macros.form_field(search_form.vendor_id) }}
             </div>
         </div>
-        <div class="row justify-content-start mt-5">
-            <div class="col">
-                Showing {{ as_quantity(result_count) }} results:
-            </div>
+        {{ macros.form_field(search_form.tags, extra={'data-role': 'tagsinput'}) }}
+        {{ macros.form_submit(search_form.submit) }}
+    </form>
+
+    <div class="row justify-content-start mt-5">
+        <div class="col ml-3">
+            Showing {{ as_quantity(result_count) }} results:
         </div>
-        <div class="row mt-3">
-            <div class="col">
-                <table class="table table-striped table-bordered">
-                    <thead>
-                        <tr>
-                            <th scope="col">id</th>
-                            <th scope="col">Vendor</th>
-                            <th scope="col">SKU</th>
-                            <th scope="col">Category</th>
-                            <th scope="col" class="text-right">Rank</th>
-                            <th scope="col">Title</th>
-                            <th scope="col" class="text-right">Quantity</th>
-                            <th scope="col" class="text-right">Price</th>
-                            <th scope="col" class="text-center">
-                                <div class="dropdown">
-                                    <button class="btn btn-outline-primary dropdown-toggle" type="button" data-toggle="dropdown">Actions</button>
-                                    <div class="dropdown-menu">
-                                        <button class="dropdown-item" type="button" data-target="#tagProductsDlg" data-toggle="modal">Tag</button>
-                                        <div class="dropdown-divider"></div>
-                                        <button class="dropdown-item" type="button" onclick="$('.productSelector').prop('checked', true)">Select All</button>
-                                    </div>
+    </div>
+    <div class="row mt-3">
+        <div class="col ml-3">
+            <table class="table table-striped table-bordered">
+                <thead>
+                    <tr>
+                        <th scope="col">id</th>
+                        <th scope="col">Vendor</th>
+                        <th scope="col">SKU</th>
+                        <th scope="col">Category</th>
+                        <th scope="col" class="text-right">Rank</th>
+                        <th scope="col">Title</th>
+                        <th scope="col" class="text-right">Quantity</th>
+                        <th scope="col" class="text-right">Price</th>
+                        <th scope="col" class="text-center">
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-toggle="dropdown">Actions</button>
+                                <div class="dropdown-menu">
+                                    <button class="dropdown-item" type="button" data-target="#tagProductsDlg" data-toggle="modal">Tag</button>
+                                    <div class="dropdown-divider"></div>
+                                    <button class="dropdown-item" type="button" onclick="$('.productSelector').prop('checked', true)">Select All</button>
                                 </div>
-                            </th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for product in products.items %}
-                        <tr>
-                            <th scope="row">{{ product.id }}</th>
-                            <td><a href="{{ url_for('vendor_details', vendor_id=product.vendor_id) }}">{{ product.vendor.name }}</a></td>
-                            <td>{{ product.sku }}</td>
-                            <td>{{ product.category }}</td>
-                            <td class="text-right">{{ as_quantity(product.rank) }}</td>
-                            <td>
-                                <a href="{{ url_for('product_details', product_id=product.id) }}">{{ product.title }}</a>
-                                {{ macros.external_link(product.detail_url) }}<br>
-                                {% if product.tags %}{% for tag in product.tags %}
-                                    <span class="badge badge-primary">{{ tag }}</span>
-                                {% endfor %}{% endif %}
-                            </td>
-                            <td class="text-right">{{ product.quantity }}</td>
-                            <td class="text-right">{{ as_money(product.price) }}</td>
-                            <td class="text-center"><input type="checkbox" class="productSelector" value="{{ product.id }}"></td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-                {{ macros.show_pages(products, request.full_path) }}
-            </div>
+                            </div>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for product in products.items %}
+                    <tr>
+                        <th scope="row" class="align-middle">{{ product.id }}</th>
+                        <td class="align-middle"><a href="{{ url_for('vendor_details', vendor_id=product.vendor_id) }}">{{ product.vendor.name }}</a></td>
+                        <td class="align-middle"><a href="{{ url_for('product_details', product_id=product.id) }}">{{ product.sku }}</a></td>
+                        <td class="align-middle">{{ product.category }}</td>
+                        <td class="align-middle text-right">{{ as_quantity(product.rank) }}</td>
+                        <td>{{ macros.small_product_summary(product, market_fees=True, shipping=True) }}</td>
+                        <td class="align-middle text-right">{{ product.quantity }}</td>
+                        <td class="align-middle text-right">{{ as_money(product.price) }}</td>
+                        <td class="align-middle text-center"><input type="checkbox" class="productSelector form-control-lg" value="{{ product.id }}"></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {{ macros.show_pages(products, request.full_path) }}
         </div>
     </div>
 {% endblock %}

@@ -1,45 +1,67 @@
-{% extends "base.html" %}
+{% extends "secondary_base.html" %}
 
 {% block scripts %}
-{{ super() }}
-<script>
-    $(document).ready(function() {
-        {{ macros.dynamic_form('editVendorBtn', 'editVendorDialog', url_for('edit_vendor_form', vendor_id=vendor.id), 'vendorForm', 'vendorFormSubmit') }}
+    {{ super() }}
+    <script>
+        $(document).ready(function() {
+            {{ macros.dynamic_form('editVendorBtn', 'editVendorDialog', url_for('edit_vendor_form', vendor_id=vendor.id), 'vendorForm', 'vendorFormSubmit') }}
 
-        $('#deleteVendorBtn').click(function() {
-            var del = confirm('Are you sure you want to do that? All related products and opportunities will be deleted.');
-            if (del == true) {
-                $.post("{{ url_for('delete_vendor') }}", data={vendor_id: {{ vendor.id }} }, function() {
-                    location.assign("{{ url_for('vendors') }}");
-                });
-            };
+            $('#deleteVendorBtn').click(function() {
+                var del = confirm('Are you sure you want to do that? All related products and opportunities will be deleted.');
+                if (del == true) {
+                    $.post("{{ url_for('delete_vendor') }}", data={vendor_id: {{ vendor.id }} }, function() {
+                        location.assign("{{ url_for('vendors') }}");
+                    });
+                };
+            });
         });
-    });
-</script>
+    </script>
+{% endblock %}
+
+{% block modals %}
+    <div class="modal fade" id="editVendorDialog" tabindex="-1" role="dialog" aria-hidden="true">
+        <div class="modal-dialog modal-lg" role="document">
+            <div class="modal-content">
+            </div>
+        </div>
+    </div>
+{%  endblock %}
+
+{% block sidebar %}
+    {% set active_tab = 'vendors' %}
+    {% include "sidebar_nav.html" %}
+    {% set active_vendor = vendor.name %}
+    {% include "vendor_nav.html" %}
+{% endblock %}
+
+{% block document_tools %}
+    <button id="editVendorBtn" type="button" class="btn btn-sm btn-outline-secondary">
+        <span data-feather="edit-2"></span>
+        Edit
+    </button>
+    <button id="deleteVendorBtn" type="button" class="btn btn-sm btn-outline-danger ml-2">
+        <span data-feather="x"></span>
+        Delete
+    </button>
 {% endblock %}
 
 {% block content %}
-<div class="modal fade" id="editVendorDialog" tabindex="-1" role="dialog" aria-hidden="true">
-    <div class="modal-dialog modal-lg" role="document">
-        <div class="modal-content">
-        </div>
-    </div>
-</div>
-<div class="container mt-3">
     <div class="row">
-        <div class="col-3">
-            <div class="img-thumbnail" style="width: 18rem; height: 18rem; display: flex; align-items: center;">
-                <img style="max-width: 100%; max-height: 100%;" src="{{ vendor.image_url }}">
+        <div class="col-sm-1" style="max-width: 18rem;">
+            <div class="img-thumbnail img-frame" style="width: 18rem; height: 18rem;">
+                <img class="framed-img" src="{{ vendor.image_url }}">
             </div>
         </div>
-        <div class="col-4">
-            <h1 id="vendorName">{{ vendor.name }}</h1>
-            <a href="{{ vendor.website }}">{{ vendor.website }}</a>
+        <div class="col-sm-5 col-xl-4">
             <table class="table mt-4">
                 <tbody>
                     <tr>
+                        <th scope="row">Website</th>
+                        <td><a href="{{ vendor.website }}">{{ vendor.website }}</a></td>
+                    </tr>
+                    <tr>
                         <th scope="row">Products</th>
-                        <td>{{ vendor.products.count() }}</td>
+                        <td>{{ as_quantity(vendor.products.count()) }}</td>
                     </tr>
                     <tr>
                         <th scope="row">Avg. Shipping</th>
@@ -47,47 +69,35 @@
                     </tr>
                 </tbody>
             </table>
-            <p>
-                <button id="editVendorBtn" type="button" class="btn btn-primary">Edit</button>
-                <button id="deleteVendorBtn" type="button" class="btn btn-danger">Delete</button>
-            </p>
         </div>
     </div>
-</div>
-<div class="container mt-5">
-    <table class="table table-striped table-bordered">
-        <thead>
-            <tr>
-                <th scope="col">id</th>
-                <th scope="col">SKU</th>
-                <th scope="col">Title</th>
-                <th scope="col">Price</th>
-                <th scope="col"></th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for product in product_page.items %}
-            <tr>
-                <th scope="row">{{ product.id }}</th>
-                <td>{{ product.sku }}</td>
-                <td>{{ product.title }}</td>
-                <td>{{ as_money(product.price) }}</td>
-                <td>
-                    <div class="dropdown">
-                        <button id="actionDrop-{{ product.id }}" class="btn btn-secondary dropdown-toggle" type="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                            Actions
-                        </button>
-                        <div class="dropdown-menu" aria-labelledby="actionDrop-{{ product.id }}">
-                            <a class="dropdown-item" target="_blank" href="{{ product.detail_url }}">Open...</a>
-                            <a class="dropdown-item" href="#">Edit</a>
-                            <a class="dropdown-item" href="#">Delete</a>
-                        </div>
-                    </div>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {{ macros.show_pages(product_page, url_for('vendor_details', vendor_id=vendor.id)) }}
-</div>
+    <div class="row mt-3">
+        <div class="col">
+            <table class="table table-striped table-bordered">
+                <thead>
+                    <tr>
+                        <th scope="col">id</th>
+                        <th scope="col">SKU</th>
+                        <th scope="col">Category</th>
+                        <th scope="col">Title</th>
+                        <th scope="col" class="text-right">Price</th>
+                        <th scope="col" class="text-right">Quantity</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for product in product_page.items %}
+                    <tr>
+                        <th scope="row">{{ product.id }}</th>
+                        <td><a href="{{ url_for('product_details', product_id=product.id) }}">{{ product.sku }}</a></td>
+                        <td>{{ product.category }}</td>
+                        <td>{{ macros.small_product_summary(product, market_fees=True, shipping=True) }}</td>
+                        <td class="text-right">{{ as_money(product.price) }}</td>
+                        <td class="text-right">{{ as_quantity(product.quantity) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {{ macros.show_pages(product_page, url_for('vendor_details', vendor_id=vendor.id)) }}
+        </div>
+    </div>
 {% endblock %}

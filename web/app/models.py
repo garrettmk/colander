@@ -30,7 +30,7 @@ def jinja_context_funcs():
             return 'N/A'
 
         depth = '.' + '0' * (p - 1) + '1'
-        return '$' + str(d.quantize(decimal.Decimal(depth)))
+        return '$' + f'{(d.quantize(decimal.Decimal(depth))):,}'
 
     def as_percent(d, p=1):
         if d is None:
@@ -72,7 +72,8 @@ def jinja_context_funcs():
         as_percent=as_percent,
         as_quantity=as_quantity,
         as_yesno=as_yesno,
-        set_page_number=set_page_number
+        set_page_number=set_page_number,
+        Vendor=Vendor
     )
 
 

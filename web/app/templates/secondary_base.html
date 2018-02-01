@@ -1,3 +1,26 @@
 {% extends "base.html" %}
 
-{%  %}
+{% block base_content %}
+    {{ super() }}
+
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <nav class="col-md-3 col-xl-2 sidebar bg-light p-0">
+                {% block sidebar %}{% endblock %}
+            </nav>
+            <div class="col-md-9 col-xl-10 p-4">
+                <!-- Document title and tools -->
+                <div class="d-flex flex-wrap flex-md-nowrap justify-content-between align-items-center border-bottom pb-2 mb-4">
+                    <h1 class="text-truncate mr-4" style="max-width: 95%;">{{ title }}</h1>
+                    <div class="btn-toolbar d-flex flex-nowrap">
+                        {% block document_tools %}
+                        {% endblock %}
+                    </div>
+                </div>
+                <!-- Document content -->
+                {% block content %}{% endblock %}
+            </div>
+        </div>
+    </div>
+{% endblock %}

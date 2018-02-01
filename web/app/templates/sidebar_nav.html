@@ -1,0 +1,32 @@
+<ul class="nav flex-column">
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'vendors' %}active{% endif %}" href="{{ url_for('vendors') }}">
+            <span data-feather="truck"></span>
+            Vendors
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'products' %}active{% endif %}" href="{{ url_for('products') }}">
+            <span data-feather="shopping-cart"></span>
+            Products
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'opportunities' %}active{% endif %}" href="{{ url_for('opportunities') }}">
+            <span data-feather="dollar-sign"></span>
+            Opportunities
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'jobs' %}active{% endif %}" href="{{ url_for('jobs') }}">
+            <span data-feather="clock"></span>
+            Jobs
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'quantity_maps' %}active{% endif %}" href="{{ url_for('quantity_maps') }}">
+            <span data-feather="list"></span>
+            Quantity Maps
+        </a>
+    </li>
+</ul>

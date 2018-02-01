@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block base_content %}
+    <div class="container-fluid">
+        <div class="row">
+            <nav class="col-1 bg-primary">
+                Sidebar
+            </nav>
+            <div class="col-11 bg-secondary">
+                <span class="d-inline-block text-truncate" style="max-width: 95%">
+                    {{ lipsum(n=1, html=False) }}
+                </span>
+            </div>
+        </div>
+    </div>
+{% endblock %}
