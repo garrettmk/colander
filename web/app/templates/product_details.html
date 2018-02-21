@@ -1,12 +1,15 @@
 {% extends "secondary_base.html" %}
 
+
 {% block scripts %}
     {{ super() }}
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/clipboard.js/1.7.1/clipboard.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.20.1/moment.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.7.1/Chart.js"></script>
     <script>
         $(document).ready(function() {
-            {{ macros.dynamic_form('editProductBtn', 'editProductDialog', url_for('edit_product_form', product_id=product.id), 'productForm', 'productFormSubmit') }}
+            setModalFormLauncher('#addOpportunityBtn', '#addOpportunityDlg', '{{ url_for('add_opportunity_form', product_id=product.id) }}');
+            setModalFormLauncher('#editProductBtn', '#editProductDlg', '{{ url_for('edit_product_form', product_id=product.id) }}');
 
             $('#deleteProductBtn').click(function() {
                 var del = confirm('Are you sure you want to delete this product?')
@@ -16,40 +19,55 @@
                     });
                 };
             });
+
+            getHistory('day');
+            $('[data-toggle="popover"]').popover();
         });
+
+        var clipboard = new Clipboard('.clipboard');
 
         var timeFormat = "MMM Do dd YY H:mm";
 
         function newDateString(month, day, year, hours, minutes, seconds) {
-            return moment().month(month).day(day).year(year).hour(hours).minute(minutes).second(seconds).format(timeFormat)
+            return moment()
+                .utc()
+                .month(month)
+                .date(day)
+                .year(year)
+                .hour(hours)
+                .minute(minutes)
+                .second(seconds)
+                .local()
+                .format(timeFormat);
         }
 
         var ctx = document.getElementById("chart").getContext('2d');
         var myChart = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: [{% for hist in history %}newDateString({{ hist.timestamp.month }}, {{ hist.timestamp.day }}, {{ hist.timestamp.year }}, {{ hist.timestamp.time().hour }}, {{ hist.timestamp.time().minute }}, {{ hist.timestamp.time().second }}),{% endfor %}],
+                labels: [],
                 datasets: [
                     {
                         label: 'Rank',
                         yAxisID: 'rank',
-                        data: [{% for hist in history %}{{ hist.rank }},{% endfor %}],
+                        data: [],
                         backgroundColor: 'rgba(0, 0, 0, 0)',
                         borderColor: 'rgba(0, 128, 255, 1)',
-                        borderWidth: 1
+                        borderWidth: 3
                     },
                     {
                         label: 'Price',
                         yAxisID: 'price',
-                        data: [{% for hist in history %}{{ hist.price }},{% endfor %}],
+                        data: [],
                         backgroundColor: 'rgba(0, 0, 0, 0)',
-                        borderColor: 'rgba(0, 255, 128, 1)',
-                        borderWidth: 1
+                        borderColor: 'rgba(0, 204, 102, 1)',
+                        borderWidth: 3
                     }
                 ]
             },
             options: {
                 responsive: true,
+                maintainAspectRatio: false,
                 scales: {
                     yAxes: [
                         {
@@ -70,91 +88,399 @@
                 }
             }
         });
+
+        function updateFromVendor() {
+            var refresh_rate = 1000;
+
+            $.get('/api/ops/products/update_from_vendor?product_id=' + {{ product.id }}, function(task) {
+                console.log(task.id);
+                console.log(task.status);
+
+                function reloadOnSuccess() {
+                    console.log('checking...');
+
+                    $.get('/api/results/' + task.id, function(data) {
+                        if (data.status == 'SUCCESS') {
+                            location.reload();
+                        } else if (data.status == 'FAILURE') {
+                            window.alert(data.status + ': ' + data.result);
+                        } else {
+                            window.setTimeout(reloadOnSuccess, refresh_rate)
+                        }
+                    });
+                }
+
+                window.setTimeout(reloadOnSuccess, refresh_rate);
+            });
+        }
+
+        function getAmazonFees() {
+            var refresh_rate = 1000;
+
+            $.get('/api/ops/products/update_fba_fees?product_id=' + {{ product.id }}, function(task) {
+                function reloadOnSuccess() {
+                    $.get('/api/results/' + task.id, function(data) {
+                        if (data.status === 'SUCCESS') {
+                            location.reload();
+                        } else if (data.status === 'FAILURE') {
+                            window.alert(data.status + ': ' + data.result);
+                        } else {
+                            window.setTimeout(reloadOnSuccess, refresh_rate)
+                        }
+                    });
+                }
+
+                window.setTimeout(reloadOnSuccess, refresh_rate);
+            });
+        }
+
+        function getHistory(frame) {
+            var base_url = '{{ url_for('history', product_id=product.id) }}';
+
+            $.get(base_url + '?frame=' + frame, function(data) {
+                myChart.data.labels = data['labels'].map(x => moment(x).format(timeFormat));
+                myChart.data.datasets[0].data = data['rank'];
+                myChart.data.datasets[1].data = data['price'];
+                myChart.update();
+            });
+
+            var text;
+
+            if (frame === 'day')
+                text = 'Today';
+            else if (frame === 'week')
+                text = 'Past week';
+            else if (frame === 'month')
+                text = 'Past month';
+
+            $('#historyLengthDrop').html('<span data-feather="calendar"></span> ' + text);
+            feather.replace();
+        }
+
+        function editTags() {
+            var tags = $('#editTagsInput').tagsinput('items');
+            $.ajax('{{ url_for('obj_attrs', obj_type='products', obj_id=product.id) }}', {
+                type: 'POST',
+                data: JSON.stringify({tags: tags}),
+                contentType: 'application/json',
+                success: function() {
+                    location.reload();
+                }
+            });
+        }
+
+        function hideSelectedOpps(reason) {
+            var selected = $('.opportunitySelector:checked').map(function() {return $(this).val()}).get();
+            var hide = confirm('Are you sure you want to hide these opportunities?');
+            if (hide) {
+                selected.forEach(function(id) {
+                    $.ajax('/api/opps/' + id, {
+                        type: 'POST',
+                        data: JSON.stringify({hidden: reason}),
+                        contentType: 'application/json',
+                    })
+                });
+
+                location.reload();
+            }
+        }
     </script>
 {% endblock %}
 
+
 {% block modals %}
-    <div class="modal fade" id="editProductDialog" tabindex="-1" role="dialog">
-        <div class="modal-dialog modal-lg" role="document">
+    {{ macros.empty_modal('editProductDlg', 'Edit Product', 'Ok', large=True) }}
+    {{ macros.empty_modal('addOpportunityDlg', 'Add Opportunity', 'Ok') }}
+
+    <!-- Edit tags dialog -->
+    <div class="modal fade" id="editTagsDlg" tabindex="-1" role="dialog">
+        <div class="modal-dialog" role="document">
             <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        Edit Tags
+                    </h5>
+                    <button type="button" class="close" data-dismiss="modal">
+                        &times;
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <select multiple id="editTagsInput" data-role="tagsinput">
+                        {% if product.tags %}
+                            {% for tag in product.tags %}
+                                <option value="{{ tag }}">{{ tag }}</option>
+                            {% endfor %}
+                        {% endif %}
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="editTags();">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit market fees dialog -->
+    <div class="modal fade" id="editMarketFeesDlg" tabindex="-1" role="dialog">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        Edit Market Fees
+                    </h5>
+                </div>
+                <div class="modal-body d-flex flex-row">
+                    <
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Extra data viewer -->
+    <div class="modal fade" id="extraDataDlg" tabindex="-1" role="dialog">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        Extra data
+                    </h5>
+                    <button type="button" class="close" data-dismiss="modal">
+                        &times;
+                    </button>
+                </div>
+                <div class="modal-body">
+                    {% if product.data %}
+                        <table class="table">
+                            {% for key, value in product.data.items() %}
+                                <tr>
+                                    <th scope="row" class="border-0">{{ key }}</th>
+                                    <td class="border-0">{{ value }}</td>
+                                </tr>
+                            {% endfor %}
+                        </table>
+                    {% endif %}
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                </div>
             </div>
         </div>
     </div>
 {% endblock %}
 
-{% block sidebar %}
-    {% set active_tab = 'products' %}
-    {% include 'sidebar_nav.html' %}
-    {% include 'products_nav.html' %}
-{% endblock %}
+
+{% block navbar %}
+    {% set active_tab ='products' %}
+    {% include "navbar.html" %}
+{% endblock %}}
+
 
 {% block document_tools %}
-    <button id="editProductBtn" type="button" class="btn btn-sm btn-outline-secondary">
-        <span data-feather="edit-2"></span>
-        Edit
-    </button>
+    <div class="btn-group btn-group-sm">
+        <button id="editProductBtn" type="button" class="btn btn-outline-secondary">
+            <span data-feather="edit-2"></span>
+            Edit
+        </button>
+        <div class="btn-group btn-group-sm" role="group">
+            <button id="productActionsDrop" type="button" class="btn btn-outline-secondary dropdown-toggle" data-toggle="dropdown">
+                <span data-feather="settings"></span>
+                Actions
+            </button>
+            <div class="dropdown-menu dropdown-menu-right">
+                <a class="dropdown-item" href="javascript:updateFromVendor();">Update from vendor</a>
+                <a class="dropdown-item">Find opportunities</a>
+            </div>
+        </div>
+    </div>
     <button id="deleteProductBtn" type="button" class="btn btn-sm btn-outline-danger ml-2">
         <span data-feather="x"></span>
         Delete
     </button>
 {% endblock %}
 
+
 {% block content %}
-{#    <div class="row justify-content-start">#}
-{#        <div class="col-3">#}
-{#            <div class="img-thumbnail img-frame">#}
-{#                <img class="framed-img" src="{{ product.image_url }}">#}
-{#            </div>#}
-{#        </div>#}
-{#        <div class="col-4">#}
-{#            <table class="table mt-4">#}
-{#                <tbody>#}
-{#                    <tr>#}
-{#                        <th scope="row">Tags</th>#}
-{#                        <td>#}
-{#                            {% for tag in product.tags %}#}
-{#                                <span class="badge badge-primary">{{ tag }}</span>#}
-{#                            {% endfor %}#}
-{#                        </td>#}
-{#                    </tr>#}
-{#                    <tr>#}
-{#                        <th scope="row">Vendor/SKU</th>#}
-{#                        <td>{{ product.vendor.name }} {{ product.sku }}</td>#}
-{#                    </tr>#}
-{#                    <tr>#}
-{#                        <th scope="row">Rank</th>#}
-{#                        <td>{{ product.rank }}</td>#}
-{#                    </tr>#}
-{#                    <tr>#}
-{#                        <th scope="row">Price</th>#}
-{#                        <td>{{ as_money(product.price) }}</td>#}
-{#                    </tr>#}
-{#                    <tr>#}
-{#                        <th scope="row">Quantity</th>#}
-{#                        <td>{{ product.quantity }} ({{ product.quantity_desc }})</td>#}
-{#                    </tr>#}
-{#                    <tr>#}
-{#                        <th scope="row">Brand/Model</th>#}
-{#                        <td>{{ product.brand }} {{ product.model }}</td>#}
-{#                    </tr>#}
-{#                    <tr>#}
-{#                        <td colspan="2">{{ product.description }}</td>#}
-{#                    </tr>#}
-{#                </tbody>#}
-{#            </table>#}
-{#        </div>#}
-{#        <div class="col-5 border border-primary">#}
-{#            <div class="chart-container border border-danger" style="position: relative; width: 95%; height: 95%">#}
-{#                <canvas class="border border-secondary" id="chart" style="width: 95%; height: 95%"></canvas>#}
-{#            </div>#}
-{#        </div>#}
-{#    </div>#}
-{#    <div class="container-fluid mt-5">#}
-{#        <div class="row">#}
-{#            <div class="col mx-auto my-auto">#}
-{#                {{ macros.opp_table(opps_page.items) }}#}
-{#                {{ macros.show_pages(opps_page, url_for('product_details', product_id=product.id)) }}#}
-{#            </div>#}
-{#        </div>#}
-{#    </div>#}
+    <div class="row mb-5">
+        <!-- Product image -->
+        <div class="col-xl-4">
+            <div class="img-thumbnail img-frame h-100">
+                {% if product.image_url %}
+                    <img class="framed-img" src="{{ product.image_url }}">
+                {% else %}
+                    <span>No image URL.</span>
+                {% endif %}
+            </div>
+        </div>
+        <!-- Summary -->
+        <div class="col-xl-4">
+            <table class="table mt-4">
+                <tbody>
+                    <tr>
+                        <th scope="row" class="border-0">Tags</th>
+                        <td class="d-flex flex-row justify-content-start align-items-baseline border-0">
+                            <div class="mr-auto">
+                                {% for tag in product.tags %}
+                                    <span class="badge badge-primary">{{ tag }}</span>
+                                {% endfor %}
+                            </div>
+                            <a href="#" class="text-secondary" data-toggle="modal" data-target="#editTagsDlg">
+                                <span data-feather="edit-2"></span>
+                            </a>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Vendor</th>
+                        <td>
+                            <a href="{{ url_for('vendor_details', vendor_id=product.vendor_id) }}">
+                                {{ product.vendor.name }}
+                            </a>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">SKU</th>
+                        <td class="d-flex flex-row justify-content-start align-items-baseline">
+                            <div id="skuLabel" class="mr-auto" data-clipboard-text="{{ product.sku }}">
+                                {% if product.detail_url %}
+                                    {{ macros.external_link(product.detail_url, product.sku) }}
+                                {% else %}
+                                    {{ product.sku }}
+                                {% endif %}
+                            </div>
+                            <a id="skuCopyBtn"
+                               class="clipboard text-secondary"
+                               href="#"
+                               tabindex="0"
+                               role="button"
+                               data-toggle="popover"
+                               data-trigger="focus"
+                               data-content="Copied!"
+                               data-clipboard-target="#skuLabel">
+                                <span data-feather="copy"></span>
+                            </a>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Category</th>
+                        <td>{{ product.category }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Rank</th>
+                        <td>{{ as_quantity(product.rank) }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Price</th>
+                        <td>{{ as_money(product.price) }}</td>
+                    </tr>
+                {% if product.vendor_id == Vendor.get_amazon().id %}
+                    <tr>
+                        <th scope="row">Market fees</th>
+                        <td class="d-flex flex-row justify-content-start align-itmes-baseline">
+                            <div class="mr-auto">
+                                {{ as_money(product.market_fees) }}
+                            </div>
+                            <a class="text-secondary" href="javascript:getAmazonFees();">
+                                <span data-feather="download-cloud"></span>
+                            </a>
+                        </td>
+                    </tr>
+                {% endif %}
+                    <tr>
+                        <th scope="row">Quantity</th>
+                        <td>{{ product.quantity }} ({{ product.quantity_desc }})</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Brand</th>
+                        <td>{{ product.brand }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Model</th>
+                        <td>{{ product.model }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Data</th>
+                        <td>
+                            {% if product.data %}
+                                <a href="javascript:$('#extraDataDlg').modal('show');">View...</a>
+                            {% else %}
+                                None
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Last modified</th>
+                        <td>{{ moment(product.last_modified).format('LLL') }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <!-- Description -->
+        <div class="col-xl-4">
+            <div class="d-block w-100 px-3 py-2" style="overflow-y: scroll; min-height: 100%; max-height: 100%;">
+                {% if product.description %}
+                    {{ product.description|markdown }}
+                {% else %}
+                    No description.
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <!-- Chart -->
+    {% if history %}
+        <div class="title-section">
+            <span class="subtitle">History</span>
+            <div class="btn-group btn-group-sm" role="group">
+                <div class="btn-group btn-group-sm" role="group">
+                    <button id="historyLengthDrop" type="button" class="btn btn-outline-secondary dropdown-toggle" data-toggle="dropdown">
+                        <span data-feather="calendar"></span>
+                        Today
+                    </button>
+                    <div class="dropdown-menu dropdown-menu-right">
+                        <a class="dropdown-item" onclick="getHistory('day');">Today</a>
+                        <a class="dropdown-item" onclick="getHistory('week');">This week</a>
+                        <a class="dropdown-item" onclick="getHistory('month');">This month</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <canvas id="chart" class="w-100 mt-4 mb-5" style="max-height: 36rem;"></canvas>
+    {% endif %}
+
+    <!-- Table of Opportunity -->
+    <div class="title-section">
+        <span class="subtitle">Opportunities:</span>
+        <div class="btn-group btn-group-sm" role="group">
+            <button id="addOpportunityBtn" type="button" class="btn btn-outline-secondary">
+                <span data-feather="plus"></span>
+                Add...
+            </button>
+            <div class="btn-group btn-group-sm" role="group">
+                <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-toggle="dropdown">
+                    <span data-feather="settings"></span>
+                    Action on selected
+                </button>
+                <div class="dropdown-menu dropdown-menu-right">
+                    <a class="dropdown-item">Tags...</a>
+                    <div class="dropdown-divider"></div>
+                    <a class="dropdown-item" href="javascript:hideSelectedOpps('hidden');">Hide</a>
+                    <a class="dropdown-item" href="javascript:hideSelectedOpps('invalid');">Bad match</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if opps_page.pages %}
+        {% if product.vendor_id == Vendor.get_amazon().id %}
+            {{ macros.opps_table(opps_page.items, show_market=False) }}
+        {% else %}
+            {{ macros.opps_table(opps_page.items, show_supply=False) }}
+        {% endif %}
+
+        {% if opps_page.pages > 1 %}
+            {{ macros.show_pages(opps_page, request.full_path) }}
+        {% endif %}
+    {% else %}
+        This product has no opportunities.
+    {% endif %}
+
 {% endblock %}

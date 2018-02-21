@@ -52,6 +52,23 @@
 {%- endmacro %}
 
 
+{% macro form_radios(elem, add_class='', inline=False) %}
+    <div class="input-group">
+        {% for radio in elem %}
+            <div class="form-check mr-3{% if inline %} form-check-inline{% endif %}">
+                {{ radio(class_='form-check-input') }}
+                {{ radio.label }}
+            </div>
+        {% endfor %}
+        {% if elem.errors %}
+            <div class="invalid-feedback d-block">
+                {% for error in elem.errors %}{{ error }}{% endfor %}
+            </div>
+        {% endif %}
+    </div>
+{% endmacro %}
+
+
 {% macro form_submit(elem, add_class='') -%}
     {{ elem(class_='btn btn-primary ' + add_class, **kwargs) }}
 {%- endmacro %}
@@ -65,11 +82,11 @@
 
 {# Renders pagination buttons for a pagination object and an endpoint. #}
 {% macro show_pages(pagination, base_url) %}
-<ul class="pagination">
+<ul class="pagination pagination-sm mb-0">
     {% if pagination.has_prev %}
-    <li class="page-item"><a class="page-link" href="{{ set_page_number(base_url, pagination.prev_num) }}">Previous</a></li>
+    <li class="page-item"><a class="page-link" href="{{ set_page_number(base_url, pagination.prev_num) }}">&laquo;</a></li>
     {% else %}
-    <li class="page-item disabled"><span class="page-link">Previous</span></li>
+    <li class="page-item disabled"><span class="page-link">&laquo;</span></li>
     {% endif %}
 
     {% for page in pagination.iter_pages() %}
@@ -83,42 +100,44 @@
     {% endfor %}
 
     {% if pagination.has_next %}
-    <li class="page-item"><a class="page-link" href="{{ set_page_number(base_url, pagination.next_num) }}">Next</a></li>
+    <li class="page-item"><a class="page-link" href="{{ set_page_number(base_url, pagination.next_num) }}">&raquo;</a></li>
     {% else %}
-    <li class="page-item disabled"><span class="page-link">Next</span></li>
+    <li class="page-item disabled"><span class="page-link">&raquo;</span></li>
     {% endif %}
 </ul>
 {% endmacro %}
 
 
-{# Loads a form into a modal using jQuery. Must be placed in the $(document).ready() handler. #}
-{% macro dynamic_form(button_id, modal_id, form_endpoint, form_id, submit_id) %}
-$('#' + '{{ button_id }}').click(function() {
-    $.get('{{ form_endpoint }}', function(data) {
-        $('#' + '{{ modal_id }}' + ' .modal-content').html(data);
-        $('#' + '{{ modal_id }}' + ' .modal-content input[data-role=tagsinput], select[multiple][data-role=tagsinput]').tagsinput();
-        $('#' + '{{ modal_id }}').modal('show')
-
-        $('#' + '{{ submit_id }}').click(function(event) {
-            event.preventDefault();
-            $.post('{{ form_endpoint }}', data=$('#' + '{{ form_id }}').serialize(), function(data) {
-                if (data.status == 'ok') {
-                    $('#' + '{{ modal_id }}').modal('hide');
-                    location.reload();
-                } else {
-                    $('#' + '{{ modal_id }}' + ' .modal-content').html(data)
-                    $('#' + '{{ modal_id }}' + ' .modal-content input[data-role=tagsinput], select[multiple][data-role=tagsinput]').tagsinput();
-                }
-            });
-        });
-    });
-});
+{# A basic modal dialog #}
+{% macro empty_modal(id, title, submit_caption, large=False) %}
+    <div class="modal fade" id="{{ id }}" tabindex="-1" role="dialog">
+        <div class="modal-dialog{% if large %} modal-lg{% endif %}" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        {{ title }}
+                    </h5>
+                    <button class="close" type="button" data-dismiss="modal">
+                        &times;
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <!-- Body by JS -->
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-primary" type="submit">
+                        {{ submit_caption }}
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 {% endmacro %}
 
 
 {# An external link, opens in a new tab and includes a little icon. #}
 {% macro external_link(href, label=None) %}
-    <a target="_blank" href="{{ href }}">{% if label %}{{ label }} {% endif %}<i class="fa fa-external-link"></i></a>
+    <a target="_blank" href="{{ href }}">{% if label %}{{ label }} {% endif %}<span data-feather="external-link" style="margin-bottom: 2px;"></span></a>
 {% endmacro %}
 
 
@@ -130,97 +149,315 @@ $('#' + '{{ button_id }}').click(function() {
 {% endmacro %}
 
 
-{# Render a short summary of a Product, suitable for use in a table cell. #}
-{% macro small_product_summary(product) %}
-    <div class="img-thumbnail img-frame product-thumbnail float-left mr-2">
-        <img class="framed-img" src="{{ product.image_url }}">
+{# Render a table of Products #}
+{% macro products_table(products) %}
+    <div class="d-flex flex-row flex-wrap align-items-stretch w-100 mb-3">
+        {% for product in products %}
+            <div class="col-xl card p-0 mb-2{% if loop.cycle(1, 0) %} mr-2{% endif %}">
+                <div class="row no-gutters border-primary w-100 h-100">
+                    <div class="col-sm-3">
+                        <a href="{{ url_for('product_details', product_id=product.id) }}">
+                            <div class="img-frame bg-light w-100 h-100">
+                                <img class="framed-img" src="{{ product.image_url }}">
+                            </div>
+                        </a>
+                    </div>
+                    <div class="col-sm-9 border-top border-left pt-4 px-3 pb-3 w-100" style="margin-left: -1px; margin-top: -1px;">
+                        <h5><a href="{{ url_for('product_details', product_id=product.id) }}">{{ product.title }}</a></h5>
+                        <h6 class="text-muted">{{ product.vendor.name }} #<a href="{{ product.detail_url }}">{{ product.sku }} <span data-feather="external-link"></span></a></h6>
+                        <h6 class="text-muted">Ranked #{{ as_quantity(product.rank) }} in {{ product.category or 'N/A' }}</h6>
+                        <table class="table table-sm mt-3">
+                            <tr>
+                                <th scope="row">Tags:</th>
+                                <td>{{ render_tags(product.tags) }}</td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Price:</th>
+                                <td>{{ as_money(product.price) }}</td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Quantity:</th>
+                                <td>{{ as_quantity(product.quantity) }} {% if product.quantity_desc %}({{ product.quantity_desc }}{% endif %}</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% if loop.cycle(0, 1) %}
+                <div class="w-100 d-none d-xl-block"></div>
+            {% endif %}
+        {% endfor %}
     </div>
-    <b>
-        <a href="{{ url_for('product_details', product_id=product.id) }}">
-            {{ product.title }}
-        </a>
-        <a href="{{ product.detail_url }}">
-            <span data-feather="external-link"></span>
-        </a>
-    </b>
-    {% if product.tags %}
-        {{ render_tags(product.tags) }}
-    {% endif %}
-    {% if 'vendor' in kwargs %}
-        <b><a href="{{ url_for('vendor_details', vendor_id=product.vendor_id) }}">{{ product.vendor.name }}</a></b>
-    {% endif %}
-    {% if 'sku' in kwargs %}
-        {{ product.sku }}
-    {% endif %}
-    {% if 'price' in kwargs %}
-        <b>Price/Quantity: </b>{{ as_money(product.price) }} / {{ product.quantity }}
-        {% if product.quantity_desc %}
-            ({{ product.quantity_desc }})
-        {% endif %}
-    {% endif %}<br>
-    {% if 'market_fees' in kwargs %}
-        <b>Market fees: </b>{{ as_money(product.market_fees) }},
-    {% endif %}
-    {% if 'shipping' in kwargs %}
-        <b>Shipping: </b>{{ as_percent(product.vendor.ship_rate) }}
-    {% endif %}
 {% endmacro %}
 
 
 {# Render a table of Opportunities. #}
-{% macro opp_table(opps) %}
-    <table class="table table-striped table-bordered">
-        <thead>
-            <tr>
-                <th scope="col">id</th>
-                <th scope="col">Supplier</th>
-                <th scope="col">Match %</th>
-                <th scope="col">Market</th>
-                <th scope="col">Rank</th>
-                <th scope="col">Sale Price</th>
-                <th scope="col">COGS</th>
-                <th scope="col">Profit</th>
-                <th scope="col">Margin</th>
-                <th scope="col">ROI</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for opp in opps %}
-                <tr>
-                    <td><b>{{ opp.id }}</b></td>
-                    <td>
-                        <div class="img-thumbnail img-frame product-thumbnail float-left mr-2">
-                            <img src="{{ opp.supply.image_url }}" style="max-width: 100%; max-height: 100%">
+{% macro opps_table(opps, show_market=True, show_supply=True) %}
+    {% for opp in opps %}
+        <div class="row no-gutters border border-secondary rounded m-1" style="overflow: hidden;">
+
+            <!-- Opportunity -->
+            <div class="col-xl-2 d-flex align-items-stretch justify-content-center" style="background-color: #dee2e6;">
+                <div class="row no-gutters w-100 d-flex justify-content-center align-items-stretch">
+                    <div class="col-auto d-flex justify-content-center align-items-center bg-secondary p-1">
+                        <input class="bg-white mx-2 opportunitySelector" type="checkbox" value={{ opp.id }}>
+                    </div>
+                    <div class="col align-self-center">
+                        <div class="row no-gutters w-100 justify-content-around align-items-center p-1">
+                            <div class="col-xs col-sm-2 col-xl d-flex justify-content-between align-items-center m-1" style="border-bottom: 1px solid rgba(0,0,0,0.15);">
+                                <span class="d-block mr-2" data-feather="corner-down-left"></span>
+                                <span>{{ as_percent(opp.roi) }}</span>
+                            </div>
+                            <div class="w-100 d-xs-block d-sm-none d-xl-block"></div>
+                            <div class="col-xs col-sm-2 col-xl d-flex justify-content-between align-items-center m-1" style="border-bottom: 1px solid rgba(0,0,0,0.15);">
+                                <span class="d-block mr-2" data-feather="dollar-sign"></span>
+                                <span>{{ as_money(opp.profit) }}</span>
+                            </div>
+                            <div class="w-100 d-xs-block d-sm-none d-xl-block"></div>
+                            <div class="col-xs col-sm-2 col-xl d-flex justify-content-between align-items-center m-1" style="border-bottom: 1px solid rgba(0,0,0,0.15);">
+                                <span class="d-block mr-2" data-feather="settings"></span>
+                                <span class="d-block">{{ as_money(opp.cogs) }}</span>
+                            </div>
+                            <div class="w-100 d-xs-block d-sm-none d-xl-block"></div>
+                            <div class="col-xs col-sm-2 col-xl d-flex justify-content-between align-items-center m-1" style="border-bottom: 1px solid rgba(0,0,0,0.15);">
+                                <span class="d-block mr-2" data-feather="copy"></span>
+                                <span class="d-block">{{ as_percent(opp.similarity) }}</span>
+                            </div>
                         </div>
-                        <b><a href="{{ url_for('product_details', product_id=opp.supply_id) }}">{{ opp.supply.title }}</a></b>
-                        {{ external_link(opp.supply.detail_url) }}
-                        {{ render_tags(opp.supply.tags) }}<br>
-                        <b>{{ opp.supply.vendor.name }}</b> #{{ opp.supply.sku }} <b>Price/Quantity: </b>{{ as_money(opp.supply.price) }} / {{ opp.supply.quantity }}<br>
-                        <b>Shipping: </b>{{ as_percent(opp.supply.vendor.ship_rate) }}
-                    </td>
-                    <td>{{ as_percent(opp.similarity) }}</td>
-                    <td>
-                        <div class="img-thumbnail img-frame product-thumbnail float-left mr-2">
-                            <img src="{{ opp.market.image_url }}" style="max-width: 100%; max-height: 100%">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Products -->
+            <div class="col-lg">
+                <!-- Market -->
+                {% if show_market %}
+                    <div class="row no-gutters border-bottom w-100 {% if not show_supply %}h-100{% endif %}">
+                        <!-- market image -->
+                        <div class="col-lg-2 col-xl-1 d-flex justify-content-center align-items-center border-right p-1">
+                            <a href="{{ url_for('product_details', product_id=opp.market_id) }}">
+                                <img class="framed-img" style="height: 6rem;" src="{{ opp.market.image_url }}" alt="Product details">
+                            </a>
                         </div>
-                        <b><a href="{{ url_for('product_details', product_id=opp.market_id) }}">{{ opp.market.title }}</a></b>
-                        {{ external_link(opp.market.detail_url) }}
-                        {{ render_tags(opp.market.tags) }}<br>
-                        {{ opp.market.vendor.name }} {{ opp.market.sku }}, {{ as_money(opp.market.price) }} / {{ opp.market.quantity }}<br>
-                        Market fees: {{ as_money(opp.market.market_fees) }}
-                    </td>
-                    <td>{{ as_quantity(opp.market.rank) }}</td>
-                    <td>{{ as_money(opp.market.price) }}</td>
-                    <td>{{ as_money(opp.cogs) }}</td>
-                    <td>{{ as_money(opp.profit) }}</td>
-                    <td>{{ as_percent(opp.margin) }}</td>
-                    <td>{{ as_percent(opp.roi) }}</td>
-                </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+                        <!-- market body -->
+                        <div class="col-lg-10 col-xl-11 p-2" style="background-color: rgba(63, 63, 191, .2);">
+                            <!-- Title and link -->
+                            <span class="d-block font-weight-bold">
+                                <a href="{{ url_for('product_details', product_id=opp.market_id) }}">
+                                    {{ opp.market.title }}
+                                </a> {{ render_tags(opp.market.tags) }}
+                            </span>
+                            <!-- Vendor and sku -->
+                            <span class="d-block">
+                                <span class="font-weight-bold text-muted">
+                                    {{ opp.market.vendor.name }} #
+                                </span>
+                                <a href="{{ opp.market.detail_url }}" target="_blank">
+                                    {{ opp.market.sku }} <span data-feather="external-link"></span>
+                                </a>
+                            </span>
+                            <small class="d-block mb-3">
+                                <span class="font-weight-bold text-muted">Last updated: </span>
+                                {{ moment(opp.market.last_modified).format('LLL') }}
+                            </small>
+                            <div class="row no-gutters">
+                                <!-- Category and rank -->
+                                <div class="col-lg">
+                                    <div class="row no-gutters">
+                                        <div class="col">
+                                            <span class="font-weight-bold text-muted">Category:</span>
+                                        </div>
+                                        <div class="col">
+                                            {{ opp.market.category or 'N/A' }}
+                                        </div>
+                                        <div class="w-100"></div>
+                                        <div class="col">
+                                            <span class="font-weight-bold text-muted">Rank:</span>
+                                        </div>
+                                        <div class="col">
+                                            {{ as_quantity(opp.market.rank) }}
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- Breaker -->
+                                <div class="w-100 d-none d-lg-block d-xl-none border-bottom my-2"></div>
+                                <!-- Brand and model -->
+                                <div class="col-lg">
+                                    <div class="row no-gutters">
+                                        <div class="col">
+                                            <span class="font-weight-bold text-muted">Brand:</span>
+                                        </div>
+                                        <div class="col">
+                                            {{ opp.market.brand }}
+                                        </div>
+                                        <div class="w-100"></div>
+                                        <div class="col">
+                                            <span class="font-weight-bold text-muted">Model:</span>
+                                        </div>
+                                        <div class="col">
+                                            {{ opp.market.model }}
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- Price and quantity -->
+                                <div class="col-lg">
+                                    <div class="row no-gutters">
+                                        <div class="col">
+                                            <span class="font-weight-bold text-muted">Price:</span>
+                                        </div>
+                                        <div class="col">
+                                            {{ as_money(opp.market.price) }}
+                                        </div>
+                                        <div class="w-100"></div>
+                                        <div class="col">
+                                            <span class="font-weight-bold text-muted">Quantity:</span>
+                                        </div>
+                                        <div class="col">
+                                            {{ as_quantity(opp.market.quantity) }}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                {% endif %}
+
+                <!-- Supply -->
+                {% if show_supply %}
+                    <div class="row no-gutters w-100 {% if not show_market %}h-100{% endif %}">
+                        <!-- Supply image -->
+                        <div class="col-lg-2 col-xl-1 d-flex align-items-center justify-content-center border-right p-1">
+                            <a href="{{ url_for('product_details', product_id=opp.supply_id) }}">
+                                <img class="framed-img" style="height: 6rem;" src="{{ opp.supply.image_url }}" alt="Product details">
+                            </a>
+                        </div>
+                        <!-- Supply body -->
+                        <div class="col-lg-10 col-xl-11 p-2" style="background-color: rgba(63, 191, 127, .2);">
+                            <!-- Title and link -->
+                            <span class="d-block font-weight-bold">
+                                <a href="{{ url_for('product_details', product_id=opp.supply_id) }}">
+                                    {{ opp.supply.title }}
+                                </a> {{ render_tags(opp.supply.tags) }}
+                            </span>
+                            <!-- Vendor and sku -->
+                            <span class="d-block">
+                                <span class="font-weight-bold text-muted">
+                                    {{ opp.supply.vendor.name }} #
+                                </span>
+                                <a href="{{ opp.supply.detail_url }}" target="_blank">
+                                    {{ opp.supply.sku }} <span data-feather="external-link"></span>
+                                </a>
+                            </span>
+                            <small class="d-block mb-3">
+                                <span class="font-weight-bold text-muted">Last updated: </span>
+                                {{ moment(opp.supply.last_modified).format('LLL') }}
+                            </small>
+                            <div class="row no-gutters">
+                                <!-- Category and rank -->
+                                <div class="col-lg">
+                                    <div class="row no-gutters">
+                                        <div class="col">
+                                            <span class="font-weight-bold text-muted">Category:</span>
+                                        </div>
+                                        <div class="col">
+                                            {{ opp.supply.category or 'N/A' }}
+                                        </div>
+                                        <div class="w-100"></div>
+                                        <div class="col">
+                                            <span class="font-weight-bold text-muted">Rank:</span>
+                                        </div>
+                                        <div class="col">
+                                            {{ as_quantity(opp.supply.rank) }}
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- Breaker -->
+                                <div class="w-100 d-none d-lg-block d-xl-none border-bottom my-2"></div>
+                                <!-- Brand and model -->
+                                <div class="col-lg">
+                                    <div class="row no-gutters">
+                                        <div class="col">
+                                            <span class="font-weight-bold text-muted">Brand:</span>
+                                        </div>
+                                        <div class="col">
+                                            {{ opp.supply.brand }}
+                                        </div>
+                                        <div class="w-100"></div>
+                                        <div class="col">
+                                            <span class="font-weight-bold text-muted">Model:</span>
+                                        </div>
+                                        <div class="col">
+                                            {{ opp.supply.model }}
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- Price and quantity -->
+                                <div class="col-lg">
+                                    <div class="row no-gutters">
+                                        <div class="col">
+                                            <span class="font-weight-bold text-muted">Price:</span>
+                                        </div>
+                                        <div class="col">
+                                            {{ as_money(opp.supply.price) }}
+                                        </div>
+                                        <div class="w-100"></div>
+                                        <div class="col">
+                                            <span class="font-weight-bold text-muted">Quantity:</span>
+                                        </div>
+                                        <div class="col">
+                                            {{ as_quantity(opp.supply.quantity) }}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    {% endfor %}
 {% endmacro %}
 
+
+{# Render a table of Jobs #}
+{% macro jobs_table(jobs, edit=None, delete=None) %}
+    <div class="d-flex flex-row flex-wrap align-items-stretch w-100">
+        {% for job in jobs %}
+            <div class="card mr-2 mb-2" style="width: 18rem;">
+                <div class="card-img-top img-frame border-bottom bg-secondary" style="height: 18rem;">
+                    <div class="d-flex justify-content-center align-items-center bg-primary" style="position: absolute; top: 0; left: 0; width: 2rem; height: 2rem; border-radius: .25rem 0px;">
+                        <input type="checkbox">
+                    </div>
+                    <span class="text-white" data-feather="settings" style="width: 80%; height: 80%;"></span>
+                </div>
+                <div class="d-flex flex-column card-body">
+                    <h5 class="card-title">{{ job.name }}</h5>
+                    <h6 class="card-subtitle text-muted pb-3 mb-auto">{{ job.task_type.split('.')[-1] }}</h6>
+                    <table class="w-100">
+                        <tr>
+                            <th class="text-muted" scope="row">Schedule:</th>
+                            <td>{{ job.schedule_type }}</td>
+                        </tr>
+                        <tr>
+                            <th class="text-muted" scope="row">Enabled:</th>
+                            <td>{{ as_yesno(job.enabled) }}</td>
+                        </tr>
+                    </table>
+                </div>
+                {% if edit or delete %}
+                    <div class="card-footer">
+                        {% if edit %}
+                            <a class="mr-2" href="javascript:{{ edit }}('{{ url_for('edit_job_form', job_id=job.id) }}');">Edit</a>
+                        {% endif %}
+                        {% if delete %}
+                            <a class="text-danger" href="javascript:{{ delete }}({{ job.id }});">Delete</a>
+                        {% endif %}
+                    </div>
+                {% endif %}
+            </div>
+        {% endfor %}
+    </div>
+{% endmacro %}
 
 {# Sidebar utilities #}
 {% macro sidebar_heading(text, icon=None, href='#') %}
@@ -233,3 +470,4 @@ $('#' + '{{ button_id }}').click(function() {
         {% endif %}
     </h6>
 {% endmacro %}
+

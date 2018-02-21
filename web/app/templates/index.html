@@ -1,8 +1,77 @@
 {% extends "secondary_base.html" %}
 
-{% block sidebar %}
-    {% include "sidebar_nav.html" %}
+
+{% block scripts %}
+    {{ super() }}
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.20.1/moment.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.7.1/Chart.js"></script>
+    <script>
+        var ctx = document.getElementById('redisMemChart').getContext('2d');
+        var redisMemChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Usage',
+                        yAxisID: 'usage',
+                        data: [],
+                        backgroundColor: 'rgba(0, 0, 255, .5)',
+                        borderColor: 'rgba(0, 0, 255, 1)',
+                        borderWidth: 3,
+                        fill: 'origin'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                legend: {
+                    display: false
+                },
+                scales: {
+                    yAxes: [
+                        {
+                            id: 'usage',
+                            type: 'linear',
+                            position: 'left',
+                            ticks: {
+                                beginAtZero: true
+                            }
+                        }
+                    ]
+                }
+            }
+        });
+
+        updateRedisMemUsage();
+        window.setInterval(updateRedisMemUsage, 60000);
+
+        function updateRedisMemUsage() {
+            $.get('{{ url_for('redis_info', section='memory') }}', function(data) {
+                var label = moment().format('HH:mm');
+                var used = data.used_memory / 1024 / 1024;  // Put it in MB
+                redisMemChart.data.labels.push(label);
+                redisMemChart.data.datasets[0].data.push(used);
+                redisMemChart.update();
+                $('#redisPeakMemLabel').text("Peak usage: " + data.used_memory_peak_human);
+            });
+        }
+
+
+    </script>
 {% endblock %}
 
+
 {% block content %}
+    <div class="title-section">
+        <span class="subtitle">Redis</span>
+        <span class="subtitle" id="redisPeakMemLabel"></span>
+    </div>
+
+    <div class="row">
+        <div class="col">
+            <canvas id="redisMemChart" class="w-100" style="max-height: 36rem;"></canvas>
+        </div>
+    </div>
 {% endblock %}

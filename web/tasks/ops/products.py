@@ -1,4 +1,8 @@
+import re
 import collections
+import sqlalchemy
+import pymysql
+from datetime import datetime
 
 from .common import *
 
@@ -9,10 +13,10 @@ from app import db
 from app.models import Vendor, Product, QuantityMap, Opportunity, ProductHistory
 
 from sqlalchemy import func
-from sqlalchemy.exc import InternalError
 
 from tasks.parsed.products import ListMatchingProducts, GetCompetitivePricingForASIN, GetMyFeesEstimate
 from tasks.parsed.product_adv import ItemLookup
+from tasks.parsed.inventory import ListInventorySupply
 
 logger = get_task_logger(__name__)
 
@@ -20,7 +24,16 @@ logger = get_task_logger(__name__)
 ########################################################################################################################
 
 
-@celery_app.task(bind=True)
+@celery_app.task(bind=True, base=OpsTask, **OpsTask.options)
+def dummy(self, *args, **kwargs):
+    print(f'Delivery options: {self.request.delivery_info}')
+    print(f'get_priority: {self.get_priority()}')
+
+
+########################################################################################################################
+
+
+@celery_app.task(bind=True, base=OpsTask)
 def clean_and_import(self, data):
     """Cleans, validates, and imports product data."""
 
@@ -65,16 +78,13 @@ def clean_and_import(self, data):
     db.session.commit()
 
     # Try to determine listing quantity
-    chain(
-        guess_quantity.s(product.id),
-        find_amazon_matches.si(product.id)
-    ).apply_async()
+    find_amazon_matches.apply_async(args=(product.id,), priority=self.get_priority())
 
 
 ########################################################################################################################
 
 
-@celery_app.task(bind=True)
+@celery_app.task(bind=True, base=OpsTask)
 def guess_quantity(self, product_id):
     """Guess listing quantity based on QuantityMap data."""
     product = Product.query.filter_by(id=product_id).first()
@@ -85,22 +95,18 @@ def guess_quantity(self, product_id):
     if product.quantity and product.quantity_desc:
         qmap = QuantityMap.query.filter_by(text=product.quantity_desc).first()
         if qmap is None:
-            qmap = QuantityMap(text=product.quantity_desc.lower(), quantity=product.quantity)
+            qmap = QuantityMap(text=product.quantity_desc, quantity=product.quantity)
             db.session.add(qmap)
         elif qmap.quantity is None:
             qmap.quantity = product.quantity
 
-        db.session.commit()
-        quantity_map_updated(qmap.id)
-        return
-
     # If only quantity_desc, look up quantity in QuantityMap
     elif product.quantity_desc:
-        qmap = QuantityMap.query.filter_by(text=product.quantity_desc.lower()).first()
+        qmap = QuantityMap.query.filter(QuantityMap.text.ilike(product.quantity_desc)).first()
         if qmap and qmap.quantity:
             product.quantity = qmap.quantity
         elif qmap is None:
-            qmap = QuantityMap(text=product.quantity_desc.lower())
+            qmap = QuantityMap(text=product.quantity_desc)
             db.session.add(qmap)
 
     else:
@@ -109,7 +115,7 @@ def guess_quantity(self, product_id):
             .all()
 
         for qmap in all_qmaps:
-            if qmap.text.lower() in product.title.lower():
+            if re.search(f'(\W|\A){qmap.text}(\W|\Z)', product.title, re.IGNORECASE):
                 product.quantity_desc = qmap.text
                 product.quantity = qmap.quantity
                 break
@@ -126,7 +132,7 @@ def guess_quantity(self, product_id):
 ########################################################################################################################
 
 
-@celery_app.task(bind=True)
+@celery_app.task(bind=True, base=OpsTask)
 def quantity_map_updated(self, qmap_id):
     """Updates all related products with new quantity map data."""
     qmap = QuantityMap.query.filter_by(id=qmap_id).first()
@@ -136,11 +142,12 @@ def quantity_map_updated(self, qmap_id):
     Product.query.filter(
         db.or_(
             Product.quantity_desc.ilike(qmap.text),
-            Product.title.ilike(f'%{qmap.text}%')
+            Product.title.op('regexp')(f'[[:<:]]{qmap.text}[[:>:]]')
         )
     ).update(
         {
-            'quantity': qmap.quantity
+            'quantity': qmap.quantity,
+            'last_modified': datetime.utcnow()
         },
         synchronize_session=False
     )
@@ -151,7 +158,7 @@ def quantity_map_updated(self, qmap_id):
 ########################################################################################################################
 
 
-@celery_app.task(bind=True, autoretry_for=(InternalError,))
+@celery_app.task(bind=True, base=OpsTask, **OpsTask.options)
 def find_amazon_matches(self, product_id):
     """Find matching products in Amazon's catalog, import them, and create corresponding opportunities."""
     product = Product.query.filter_by(id=product_id).first()
@@ -166,7 +173,7 @@ def find_amazon_matches(self, product_id):
         raise ValueError(f'Data required: brand + model OR title')
 
     amazon = Vendor.get_amazon()
-    matches = ListMatchingProducts(query=query_string)
+    matches = ListMatchingProducts(query=query_string, priority=self.get_priority())
 
     for match_data in matches['results']:
         match_product = Product.query.filter_by(vendor_id=amazon.id, sku=match_data['sku']).first()
@@ -179,8 +186,8 @@ def find_amazon_matches(self, product_id):
         db.session.commit()
 
         # Follow-up tasks:
-        chain(
-            chord(
+        self.pchain(
+            self.pchord(
                 (
                     GetCompetitivePricingForASIN.s(match_product.sku),
                     ItemLookup.s(match_product.sku),
@@ -191,7 +198,7 @@ def find_amazon_matches(self, product_id):
         ).apply_async()
 
 
-@celery_app.task(bind=True)
+@celery_app.task(bind=True, base=OpsTask)
 def update_amazon_listing(self, data, product_id):
     """Updates a product using various sources of data."""
 
@@ -246,26 +253,29 @@ def update_amazon_listing(self, data, product_id):
         product.update(raw_data)
 
     db.session.commit()
-    guess_quantity(product.id)
 
     return product.id
 
 
-@celery_app.task(bind=True)
-def update_fba_fees(self, product_id):
+@celery_app.task(bind=True, base=OpsTask)
+def update_fba_fees(self, product_id, **kwargs):
     """Updates the market_fees field with the total fee amount for the current price."""
+    kwargs.pop('priority', None)
+
     product = Product.query.filter_by(id=product_id).first()
     if product is None:
         raise ValueError(f'Invalid product id: {product_id}')
 
-    return update_amazon_listing(
-        GetMyFeesEstimate(product.sku, str(product.price)),
+    update_amazon_listing(
+        GetMyFeesEstimate(product.sku, str(product.price), priority=self.get_priority(), **kwargs),
         product_id
     )
 
+    return product_id
 
-@celery_app.task()
-def store_product_history(product_id):
+
+@celery_app.task(bind=True, base=OpsTask)
+def store_product_history(self, product_id):
     """Stores a product's current state in the ProductHistory table."""
     product = Product.query.filter_by(id=product_id).first()
     if product is None:
@@ -274,3 +284,40 @@ def store_product_history(product_id):
     history = ProductHistory(product)
     db.session.add(history)
     db.session.commit()
+
+
+@celery_app.task(bind=True, base=OpsTask)
+def get_inventory(self, tags=['inventory']):
+    """Retrieve inventory from Amazon."""
+    results = ListInventorySupply(priority=self.get_priority())['results']
+    amazon = Vendor.get_amazon()
+
+    for result in results:
+        product = Product.query.filter_by(vendor_id=amazon.id, sku=result['sku']).first()
+        if product is None:
+            product = Product(vendor_id=amazon.id, sku=result['sku'])
+            db.session.add(product)
+
+        product.update(result)
+        product.add_tags(*tags)
+        db.session.commit()
+
+
+@celery_app.task(bind=True, base=OpsTask)
+def update_from_vendor(self, product_id):
+    """Retrieves up-to-date product data from the product's vendor."""
+    product = Product.query.filter_by(id=product_id).one()
+
+    if product.vendor_id == Vendor.get_amazon().id:
+        self.pchain(
+            self.pchord(
+                (
+                    GetCompetitivePricingForASIN.s(product.sku),
+                    ItemLookup.s(product.sku),
+                ),
+                update_amazon_listing.s(product.id)
+            ),
+            update_fba_fees.s()
+        ).apply_async()
+    else:
+        raise ValueError(f'Can\'t update from vendor: {product.vendor.name}')

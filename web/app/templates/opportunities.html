@@ -1,4 +1,5 @@
-{% extends "base.html" %}
+{% extends "secondary_base.html" %}
+
 
 {% block scripts %}
     {{ super() }}
@@ -11,73 +12,67 @@
 {% endblock %}
 
 
-{% block subnav_contents %}
-    <ul class="navbar-nav">
-        <li class="navbar-brand">Opportunities</li>
-        <li class="nav-item">
-            <button id="newOpportunityBtn" type="button" class="btn btn-primary" data-toggle="modal">New</button>
-        </li>
-    </ul>
+{% block document_tools %}
+    <div class="btn-group btn-group-sm" role="group">
+        <button id="saveSearchBtn" class="btn btn-outline-secondary" type="button" data-toggle="modal" data-target="#saveSearchDlg">
+            Save
+        </button>
+    </div>
 {% endblock %}
 
 
 {% block content %}
-    <div class="container-fluid mt-3">
-        <div class="row justify-content-start">
-            <div class="col-2">
-                <form action="" method="get">
-                    {{ macros.form_field(form.query) }}
-                    {{ macros.form_tags(form.tags) }}
-                    <div class="form-row">
-                        <div class="col">
-                            {{ macros.form_field(form.max_cogs, prepend='$') }}
-                        </div>
-                        <div class="col">
-                            {{ macros.form_field(form.min_profit, prepend='$') }}
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="col">
-                            {{ macros.form_field(form.min_roi, append='%') }}
-                        </div>
-                        <div class="col">
-                            {{ macros.form_field(form.min_similarity, append='%') }}
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="col">
-                            {{ macros.form_field(form.min_rank) }}
-                        </div>
-                        <div class="col">
-                            {{ macros.form_field(form.max_rank) }}
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="col">
-                            {{ macros.form_field(form.sort_by) }}
-                        </div>
-                        <div class="col">
-                            {{ macros.form_field(form.sort_order) }}
-                        </div>
-                    </div>
-                    <div class="form-row pull-right">
-                        <div class="col">
-                            {{ macros.form_submit(form.submit) }}
-                        </div>
-                    </div>
-                </form>
+    {% if total_opps %}
+        <form class="col-lg col-xl-6 mb-5" action="" method="get">
+            {{ macros.form_field(form.query) }}
+            {{ macros.form_tags(form.tags) }}
+            <div class="form-row">
+                <div class="col">
+                    {{ macros.form_field(form.max_cogs, prepend='$') }}
+                </div>
+                <div class="col">
+                    {{ macros.form_field(form.min_profit, prepend='$') }}
+                </div>
             </div>
-        </div>
-        <div class="row justify-content-start mt-5">
-            <div class="col">
-                Showing {{ as_quantity(opps_page.total) }} results:
+            <div class="form-row">
+                <div class="col">
+                    {{ macros.form_field(form.min_roi, append='%') }}
+                </div>
+                <div class="col">
+                    {{ macros.form_field(form.min_similarity, append='%') }}
+                </div>
             </div>
-        </div>
-        <div class="row mt-3">
-            <div class="col">
-                {{ macros.opp_table(opps_page.items) }}
-                {{ macros.show_pages(opps_page, request.full_path) }}
+            <div class="form-row">
+                <div class="col">
+                    {{ macros.form_field(form.min_rank) }}
+                </div>
+                <div class="col">
+                    {{ macros.form_field(form.max_rank) }}
+                </div>
             </div>
+            <div class="form-row">
+                <div class="col">
+                    {{ macros.form_field(form.sort_by) }}
+                </div>
+                <div class="col">
+                    {{ macros.form_field(form.sort_order) }}
+                </div>
+            </div>
+            <div class="form-row pull-right">
+                <div class="col">
+                    {{ macros.form_submit(form.submit) }}
+                </div>
+            </div>
+        </form>
+
+        <div class="title-section">
+            <span class="subtitle">{{ as_quantity(opps.total) }} total opportunities:</span>
+            {{ macros.show_pages(opps, request.full_path) }}
         </div>
-    </div>
+
+        {{ macros.opps_table(opps.items) }}
+        {{ macros.show_pages(opps, request.full_path) }}
+    {% else %}
+        There are no opportunities in the database.
+    {% endif %}
 {% endblock %}

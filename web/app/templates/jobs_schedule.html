@@ -1,0 +1,50 @@
+<table class="table table-responsive-xl">
+    <thead>
+        <tr>
+            <th style="border-top: none;">Name</th>
+            <th style="border-top: none;">Task</th>
+            <th style="border-top: none;">Args</th>
+            <th style="border-top: none;">Kwargs</th>
+            <th style="border-top: none;">Options</th>
+            <th style="border-top: none;">Schedule</th>
+            <th style="border-top: none;">Enabled</th>
+            <th style="border-top: none;">Last run</th>
+            <th style="border-top: none;">Due next</th>
+            <th style="border-top: none;">Run count</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for entry in schedule %}
+            <tr>
+                <td>{{ entry.name }}</td>
+                <td>{{ entry.task }}</td>
+                <td>{{ entry.args }}</td>
+                <td>{{ entry.kwargs }}</td>
+                <td>{{ entry.options }}</td>
+                <td>{{ entry.schedule }}</td>
+                <td>{{ entry.enabled }}</td>
+                <td>
+                    {% if entry.last_run_at %}
+                        {{ moment(entry.last_run_at).format('MMM Do H:mm:ss') }}
+                    {% else %}
+                        N/A
+                    {% endif %}
+                </td>
+                <td>
+                    {% if entry.last_run_at %}
+                        {{ moment(now + entry.schedule.remaining_estimate(entry.last_run_at)).format('MMM Do H:mm:ss') }}
+                    {% else %}
+                        N/A
+                    {% endif %}
+                </td>
+                <td>{{ entry.total_run_count }}</td>
+            </tr>
+        {% else %}
+            <tr>
+                <td rowspan="10">
+                    No schedule entries.
+                </td>
+            </tr>
+        {% endfor %}
+    </tbody>
+</table>

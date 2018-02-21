@@ -22,23 +22,31 @@ class KatomProductLoader(ItemLoader):
     title_out = Join()
 
     def sku_in(self, input):
-        match = self.re_sku.search(input[0])
-        return match.group(1)
+        return self.re_sku.search(input[0]).group(1)
 
     def model_in(self, input):
-        match = self.re_model.search(input[0])
-        return match.group(1)
+        try:
+            return self.re_model.search(input[0]).group(1)
+        except:
+            return None
 
     def price_in(self, input):
-        match = self.re_price.search(input[0])
-        return match.group(1).replace(',', '') if match is not None else None
+        try:
+            return self.re_price.search(input[0]).group(1).replace(',', '')
+        except:
+            return None
 
     def quantity_desc_in(self, input):
-        match = self.re_quantity.search(input[0])
-        return match.group(1)
+        try:
+            return self.re_quantity.search(input[0]).group(1)
+        except:
+            return None
 
     def description_in(self, input):
-        return html2text.html2text(input[0])
+        try:
+            return html2text.html2text(input[0])
+        except:
+            return None
 
 
 class KatomSpider(scrapy.Spider):

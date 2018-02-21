@@ -6,18 +6,22 @@ from amazonmws import MARKETID
 ########################################################################################################################
 
 
-@celery_app.task
-def GetServiceStatus(**kwargs):
+@celery_app.task(bind=True)
+def GetServiceStatus(self, **kwargs):
+    kwargs.pop('priority', None)
+
     response = AmzXmlResponse(
-        products.GetServiceStatus(**kwargs)
+        products.GetServiceStatus(**kwargs, priority=self.get_priority())
     )
 
     return response.xpath_get('.//Status')
 
 
-@celery_app.task
-def ListMatchingProducts(query=None, **kwargs):
+@celery_app.task(bind=True)
+def ListMatchingProducts(self, query=None, **kwargs):
     """Perform a ListMatchingProducts request."""
+    kwargs.pop('priority', None)
+
     # Allow two-letter abbreviations for MarketplaceId
     market_id = kwargs.pop('MarketplaceId', 'US')
     market_id = market_id if len(market_id) > 2 else MARKETID.get(market_id)
@@ -30,7 +34,7 @@ def ListMatchingProducts(query=None, **kwargs):
     }
 
     response = AmzXmlResponse(
-        products.ListMatchingProducts(**params, **kwargs)
+        products.ListMatchingProducts(**params, priority=self.get_priority())
     )
 
     if response.error_code:
@@ -66,9 +70,11 @@ def ListMatchingProducts(query=None, **kwargs):
     return format_parsed_response('ListMatchingProducts', params, results)
 
 
-@celery_app.task
-def GetMyFeesEstimate(asin=None, price=None, **kwargs):
+@celery_app.task(bind=True)
+def GetMyFeesEstimate(self, asin=None, price=None, **kwargs):
     """Return the total fees estimate for a given ASIN and price."""
+    kwargs.pop('priority', None)
+
     # Allow two-letter marketplace abbreviations
     # Allow two-letter abbreviations for MarketplaceId
     market_id = kwargs.pop('MarketplaceId', 'US')
@@ -90,7 +96,7 @@ def GetMyFeesEstimate(asin=None, price=None, **kwargs):
     }
 
     response = AmzXmlResponse(
-        products.GetMyFeesEstimate(**params)
+        products.GetMyFeesEstimate(**params, priority=self.get_priority())
     )
 
     if response.error_code:
@@ -111,9 +117,11 @@ def GetMyFeesEstimate(asin=None, price=None, **kwargs):
     return format_parsed_response('GetMyFeesEstimate', params, results, errors)
 
 
-@celery_app.task
-def GetCompetitivePricingForASIN(asin=None, **kwargs):
+@celery_app.task(bind=True)
+def GetCompetitivePricingForASIN(self, asin=None, **kwargs):
     """Perform a GetCompetivePricingForASIN call and return the results as a simplified JSON dictionary."""
+    kwargs.pop('priority', None)
+
     market_id = kwargs.pop('MarketplaceId', 'US')
     market_id = market_id if len(market_id) > 2 else MARKETID.get(market_id)
 
@@ -124,7 +132,7 @@ def GetCompetitivePricingForASIN(asin=None, **kwargs):
     }
 
     response = AmzXmlResponse(
-        products.GetCompetitivePricingForASIN(**params)
+        products.GetCompetitivePricingForASIN(**params, priority=self.get_priority())
     )
 
     results, errors = {}, {}

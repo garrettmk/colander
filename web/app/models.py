@@ -1,16 +1,22 @@
 import re
 import decimal
 import json
-import datetime
+from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import UserMixin
-from app import app, db, login, celery_app
 from sqlalchemy import UniqueConstraint, orm
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_property
 from fuzzywuzzy import fuzz
 from redbeat import RedBeatScheduler, RedBeatSchedulerEntry
 import celery.schedules as schedules
+from app import app, db, login, celery_app
+
+
+DEFAULT_PRIORITY = 1
+
+
+########################################################################################################################
 
 
 decimal.getcontext().prec = 23
@@ -45,7 +51,7 @@ def jinja_context_funcs():
         if i is None:
             return 'N/A'
 
-        return f'{i:,}'
+        return f'{int(i):,}'
 
     def as_yesno(b):
         if b is None:
@@ -73,7 +79,8 @@ def jinja_context_funcs():
         as_quantity=as_quantity,
         as_yesno=as_yesno,
         set_page_number=set_page_number,
-        Vendor=Vendor
+        Vendor=Vendor,
+        Product=Product
     )
 
 
@@ -146,7 +153,46 @@ class QuantityMap(db.Model):
     quantity = db.Column(db.Integer)
 
     def __repr__(self):
-        return f'<{type(self).__name__} {self.text}={self.quantity}>'
+        return f'<{type(self).__name__} {self.text} = {self.quantity}>'
+
+    @classmethod
+    def __declare_last__(cls):
+        # Add a short delay when executing the task after an insert, to ensure that the qmap is committed to the DB
+        db.event.listen(cls, 'after_insert', lambda m, c, t: cls._update_products(t, 10))
+        db.event.listen(cls, 'after_update', lambda m, c, t: cls._update_products(t))
+
+    @staticmethod
+    def _update_products(target, delay=None):
+        if target.text and target.quantity:
+            # Using send_task to avoid a circular import
+            celery_app.send_task(
+                'tasks.ops.products.quantity_map_updated',
+                kwargs={'qmap_id': target.id},
+                priority=DEFAULT_PRIORITY,
+                countdown=delay
+            )
+
+
+########################################################################################################################
+
+
+class ProductHistory(db.Model):
+    """Stores key product data for a given point in time."""
+    id = db.Column(db.Integer, primary_key=True)
+    product_id = db.Column(db.Integer, db.ForeignKey('product.id', ondelete='CASCADE'), nullable=False)
+    timestamp = db.Column(db.DateTime, nullable=False)
+    price = db.Column(CURRENCY)
+    market_fees = db.Column(CURRENCY)
+    rank = db.Column(db.Integer)
+    flags = db.Column(db.JSON)
+
+    def __init__(self, product=None):
+        if product:
+            self.product_id = product.id
+            self.timestamp = datetime.now()
+            self.price = product.price
+            self.market_fees = product.market_fees
+            self.rank = product.rank
 
 
 ########################################################################################################################
@@ -156,7 +202,7 @@ class Product(db.Model):
     __table_args__ = (UniqueConstraint('vendor_id', 'sku'),)
 
     id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(256), index=True)
+    title = db.Column(db.String(384), index=True)
     vendor_id = db.Column(db.Integer, db.ForeignKey('vendor.id', ondelete='CASCADE'), nullable=False)
     sku = db.Column(db.String(64), index=True, nullable=False)
     detail_url = db.Column(db.String(128))
@@ -165,6 +211,7 @@ class Product(db.Model):
     quantity = db.Column(db.Integer, default=1)
     market_fees = db.Column(CURRENCY, index=True)
     rank = db.Column(db.Integer, index=True)
+    category = db.Column(db.String(64), index=True)
 
     brand = db.Column(db.String(64), index=True)
     model = db.Column(db.String(64), index=True)
@@ -175,12 +222,41 @@ class Product(db.Model):
     data = db.Column(db.JSON)
     tags = db.Column(db.JSON, default=[])
 
+    last_modified = db.Column(db.DateTime, default=db.func.now(), onupdate=db.func.now())
+
     supply_listings = association_proxy('supply_relations', 'supply', creator=lambda l: Opportunity(supply=l))
     market_listings = association_proxy('market_relations', 'market', creator=lambda l: Opportunity(market=l))
+    history = db.relationship('ProductHistory', backref='product', lazy='dynamic', passive_deletes=True)
+
+
+    @classmethod
+    def __declare_last__(cls):
+        db.event.listen(cls, 'after_insert', lambda m, c, t: cls._maybe_guess_quantity(t, 10))
+        db.event.listen(cls, 'after_update', lambda m, c, t: cls._maybe_guess_quantity(t))
+
+    @staticmethod
+    def _maybe_guess_quantity(target, delay=None):
+        insp = db.inspect(target)
+        changed = insp.attrs['title'].history.has_changes() or \
+                  insp.attrs['quantity_desc'].history.has_changes()
+
+        if changed:
+            # Use send_task to avoid circular import
+            celery_app.send_task(
+                'tasks.ops.products.guess_quantity',
+                kwargs={'product_id': target.id},
+                priority=DEFAULT_PRIORITY,
+                countdown=delay
+            )
 
     @hybrid_property
     def unit_price(self):
-        return quantize(self.price / self.quantity)
+        if self.price is not None and self.quantity:
+            return quantize(self.price / self.quantity)
+        elif self.price is not None:
+            return self.price
+        else:
+            return None
 
     @unit_price.expression
     def unit_price(cls):
@@ -188,7 +264,12 @@ class Product(db.Model):
 
     @hybrid_property
     def cost(self):
-        return quantize(self.price * (1 + self.vendor.ship_rate))
+        if self.price is not None and self.vendor.ship_rate is not None:
+            return quantize(self.price * (1 + self.vendor.ship_rate))
+        elif self.price is not None:
+            return self.price
+        else:
+            return None
 
     @cost.expression
     def cost(cls):
@@ -198,7 +279,12 @@ class Product(db.Model):
 
     @hybrid_property
     def unit_cost(self):
-        return quantize(self.cost / self.quantity)
+        if self.cost is not None and self.quantity:
+            return quantize(self.cost / self.quantity)
+        elif self.cost is not None:
+            return self.cost
+        else:
+            return None
 
     @unit_cost.expression
     def unit_cost(cls):
@@ -321,6 +407,19 @@ class Product(db.Model):
 
         db.session.commit()
 
+    def add_tags(self, *args):
+        tag_set = set(self.tags or [])
+        tag_set.update(args)
+        self.tags = list(tag_set)
+
+    def remove_tags(self, *args):
+        if self.tags:
+            for tag in args:
+                try:
+                    self.tags.remove(tag)
+                except ValueError:
+                    pass
+
 
 ########################################################################################################################
 
@@ -330,6 +429,7 @@ class Opportunity(db.Model):
     supply_id = db.Column(db.Integer, db.ForeignKey('product.id', ondelete='CASCADE'), nullable=False)
     market_id = db.Column(db.Integer, db.ForeignKey('product.id', ondelete='CASCADE'), nullable=False)
     similarity = db.Column(db.Float)
+    hidden = db.Column(db.Enum('hidden', 'invalid', 'partial'))
 
     supply = db.relationship(
         Product,
@@ -387,7 +487,10 @@ class Opportunity(db.Model):
 
     @hybrid_property
     def cogs(self):
-        return quantize(self.supply.unit_cost * self.market.quantity)
+        try:
+            return quantize(self.supply.unit_cost * self.market.quantity)
+        except TypeError:
+            return None
 
     @cogs.expression
     def cogs(cls):
@@ -468,7 +571,7 @@ class Opportunity(db.Model):
 
     @classmethod
     def build_query(cls, query=None, tags=None, max_cogs=None, min_profit=None, min_roi=None, min_similarity=None,
-                    min_rank=None, max_rank=None, sort_by=None, sort_order=None):
+                    min_rank=None, max_rank=None, sort_by=None, sort_order=None, show_hidden=None):
 
         q = cls.query.join(
             cls._m_alias,
@@ -537,6 +640,9 @@ class Opportunity(db.Model):
         if max_rank is not None:
             q = q.filter(cls._m_alias.rank <= max_rank)
 
+        if not show_hidden:
+            q = q.filter(cls.hidden.is_(None))
+
         sort_field = None
         if sort_by == 'rank':
             sort_field = cls._m_alias.rank
@@ -548,6 +654,8 @@ class Opportunity(db.Model):
             sort_field = cls._roi_expr()
         elif sort_by == 'similarity':
             sort_field = cls.similarity
+        elif sort_by == 'updated':
+            sort_field = db.func.greatest(cls._m_alias.last_modified, cls._s_alias.last_modified)
 
         if sort_field is not None:
             q = q.order_by(sort_field.asc() if sort_order == 'asc' else sort_field.desc())
@@ -562,14 +670,16 @@ class Job(db.Model):
     """Stores recurring job information."""
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(64), index=True, unique=True)
-    schedule = db.Column(db.JSON)
+    schedule_type = db.Column(db.String(64), nullable=False)
+    schedule_kwargs = db.Column(db.JSON)
+    task_type = db.Column(db.String(64), nullable=False)
+    task_kwargs = db.Column(db.JSON)
     enabled = db.Column(db.Boolean, default=False)
-    task = db.Column(db.JSON)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.init_on_load()
         self.entry = None
+        self.init_on_load()
 
     @orm.reconstructor
     def init_on_load(self):
@@ -582,31 +692,22 @@ class Job(db.Model):
             self.entry = None
 
     def create_scheduler_entry(self):
-        sched_type = list(self.schedule.keys())[0]
-        sched_kwargs = self.schedule[sched_type]
-        schedule = getattr(schedules, sched_type)(**sched_kwargs)
-
-        task = list(self.task.keys())[0]
-        task_kwargs = self.task[task]
-
         self.entry = RedBeatSchedulerEntry(
             name=self.name,
-            task=task,
-            schedule=schedule,
-            kwargs=task_kwargs,
+            task=self.task_type,
+            schedule=getattr(schedules, self.schedule_type)(**self.schedule_kwargs),
+            kwargs=self.task_kwargs,
             enabled=self.enabled,
             app=celery_app
         )
 
     @staticmethod
     def create_entry(mapper, connection, target):
-        print(f'Create entry')
         target.create_scheduler_entry()
         target.entry.save()
 
     @staticmethod
     def update_entry(mapper, connection, target):
-        print('Update entry')
         if target.entry and target.entry.name != target.name:
             target.entry.delete()
 
@@ -615,7 +716,6 @@ class Job(db.Model):
 
     @staticmethod
     def delete_entry(mapper, connection, target):
-        print('Delete entry')
         if target.entry:
             target.entry.delete()
             target.entry = None
@@ -627,23 +727,4 @@ class Job(db.Model):
         db.event.listen(cls, 'after_delete', cls.delete_entry)
 
 
-########################################################################################################################
 
-
-class ProductHistory(db.Model):
-    """Stores key product data for a given point in time."""
-    id = db.Column(db.Integer, primary_key=True)
-    product_id = db.Column(db.Integer, db.ForeignKey('product.id', ondelete='CASCADE'), nullable=False)
-    timestamp = db.Column(db.DateTime, nullable=False)
-    price = db.Column(CURRENCY)
-    market_fees = db.Column(CURRENCY)
-    rank = db.Column(db.Integer)
-    flags = db.Column(db.JSON)
-
-    def __init__(self, product=None):
-        if product:
-            self.product_id = product.id
-            self.timestamp = datetime.datetime.now()
-            self.price = product.price
-            self.market_fees = product.market_fees
-            self.rank = product.rank

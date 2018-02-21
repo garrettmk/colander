@@ -1,4 +1,4 @@
-from app import app, db, celery_app
+from app import app, db, celery_app, moment
 from app.models import User, Vendor, Product, QuantityMap, Opportunity, Job, ProductHistory
 from redbeat import RedBeatScheduler
 
@@ -13,6 +13,7 @@ def make_shell_context():
         'celery_app': celery_app,
         'scheduler': RedBeatScheduler(app=celery_app),
         'db': db,
+        'moment': moment,
         'User': User,
         'Vendor': Vendor,
         'Product': Product,

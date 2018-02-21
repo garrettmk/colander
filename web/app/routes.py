@@ -1,14 +1,19 @@
 import ast
+import datetime
+import redis
 
 from flask import request, flash, render_template, redirect, url_for, jsonify
 from flask_login import current_user, login_user, logout_user, login_required
 
 from app import app, db, celery_app
 from app.forms import LoginForm, EditVendorForm, EditQuantityMapForm, EditProductForm, SearchProductsForm, EditJobForm,\
-    SearchOpportunitiesForm
+    SearchOpportunitiesForm, AddOpportunityForm
 from app.models import User, Vendor, QuantityMap, Product, Opportunity, Job, ProductHistory
 
 from celery import chain, chord
+from celery.result import AsyncResult
+from redbeat import RedBeatScheduler
+
 from tasks.ops.products import clean_and_import, update_amazon_listing, update_fba_fees, find_amazon_matches,\
     quantity_map_updated
 from tasks.parsed.products import GetCompetitivePricingForASIN, GetMyFeesEstimate
@@ -60,26 +65,100 @@ def logout():
 
 
 ########################################################################################################################
-# Task API
+# API endpoints
 
 
 @app.route('/api/<path:task>')
 def api_call(task):
-    task_name = task.replace('/', '.')
+    task = task.replace('tasks/', '') if task.startswith('tasks/') else task
+    task_module, task_file, task_name = task.split('/')
+
     args = [arg for arg, val in request.args.items() if not len(val)]
     kwargs = {arg: val for arg, val in request.args.items() if arg not in args}
 
     job = celery_app.send_task(
-        task_name,
+        '.'.join(['tasks', task_module, task_file, task_name]),
         args=args,
         kwargs=kwargs,
-        expires=30
+        expires=30 if task_module in ['mws', 'parsed'] else None,
+        priority=2
     )
 
+    if task_module in ['mws', 'parsed']:
+        try:
+            return jsonify(job.get(timeout=30))
+        except Exception as e:
+            return repr(e)
+    else:
+        return jsonify(id=job.id, status=job.status)
+
+
+@app.route('/api/results/<string:task_id>')
+def api_results(task_id):
+    task = AsyncResult(task_id, app=celery_app)
+    return jsonify(
+        id=task.id,
+        status=task.status,
+        result=repr(task.result) if isinstance(task.result, Exception) else task.result
+    )
+
+
+@app.route('/api/redis/info/<section>')
+def redis_info(section):
+    """Return info from the redis server."""
+    r = redis.from_url(app.config['BROKER_URL'])
+    return jsonify(
+        r.info(section)
+    )
+
+
+@app.route('/api/<obj_type>/<int:obj_id>', methods=['POST'])
+@app.route('/api/<obj_type>/<int:obj_id>/<attr>', methods=['GET'])
+@login_required
+def obj_attrs(obj_type, obj_id, attr=None):
+    """Set or get attributes on an arbitrary object."""
+    types = {
+        'vendors': Vendor,
+        'products': Product,
+        'qmaps': QuantityMap,
+        'history': ProductHistory,
+        'opps': Opportunity,
+        'jobs': Job
+    }
+
+    def failure(e):
+        return jsonify(
+            status='failure',
+            message=str(e)
+        )
+
+    def success(**kwargs):
+        return jsonify(
+            status='success',
+            results=kwargs
+        )
+
     try:
-        return jsonify(job.get(timeout=30))
+        obj = types[obj_type].query.filter_by(id=obj_id).first_or_404()
+    except KeyError:
+        return failure(f'Invalid object type: {obj_type}')
     except Exception as e:
-        return repr(e)
+        return failure(e)
+
+    if request.method == 'POST':
+        data = request.get_json()
+        for key, value in data.items():
+            setattr(obj, key, value)
+        db.session.commit()
+        return success(**data)
+
+    else:
+        try:
+            value = getattr(obj, attr)
+        except (AttributeError,) as e:
+            return failure(e)
+
+        return success(**{attr: value})
 
 
 ########################################################################################################################
@@ -91,11 +170,15 @@ def api_call(task):
 def vendors():
     """The top-level Vendor index."""
     product_count = Product.query.count()
-    vendors = Vendor.query.order_by(Vendor.name.asc()).all()
+    vendors = Vendor.query.order_by(Vendor.name.asc())
     return render_template(
         'vendors.html',
         title='Vendors',
-        vendors=vendors,
+        vendors=vendors.paginate(
+            request.args.get('page', 1, type=int),
+            app.config['MAX_PAGE_ITEMS'],
+            False
+        ),
         product_count=product_count
     )
 
@@ -151,13 +234,16 @@ def delete_vendor():
 def vendor_details(vendor_id):
     """Display a vendor's detail page."""
     vendor = Vendor.query.filter_by(id=vendor_id).first_or_404()
-    page_num = request.args.get('page', 1, type=int)
-    product_page = vendor.products.paginate(page_num, app.config['MAX_PAGE_ITEMS'], False)
+
     return render_template(
         'vendor_details.html',
         title=vendor.name,
         vendor=vendor,
-        product_page=product_page
+        products=vendor.products.paginate(
+            request.args.get('page', 1, type=int),
+            app.config['MAX_PAGE_ITEMS'],
+            False
+        )
     )
 
 
@@ -169,10 +255,18 @@ def vendor_details(vendor_id):
 @login_required
 def quantity_maps():
     """Render the top-level Quantity Maps index page."""
-    page_num = request.args.get('page', 1, type=int)
-    qmaps = QuantityMap.query.order_by(QuantityMap.quantity.asc()).paginate(page_num, app.config['MAX_PAGE_ITEMS'], False)
-    count = QuantityMap.query.count()
-    return render_template('quantity_maps.html', title='Quantity Maps', qmaps=qmaps, count=count)
+    qmaps = QuantityMap.query.order_by(QuantityMap.quantity.asc())
+
+    return render_template(
+        'quantity_maps.html',
+        title='Quantity Maps',
+        qmaps=qmaps.paginate(
+            request.args.get('page', 1, type=int),
+            app.config['MAX_PAGE_ITEMS'],
+            False
+        ),
+        total_qmaps=QuantityMap.query.count()
+    )
 
 
 @app.route('/quantitymaps/create', methods=['GET', 'POST'])
@@ -193,14 +287,13 @@ def new_quantity_map_form():
 
 @app.route('/quantitymaps/edit/<qmap_id>', methods=['GET', 'POST'])
 @login_required
-def edit_quantity_map_form(qmap_id):
+def edit_qmap_form(qmap_id):
     """Renders the Edit Quantity Map form."""
     qmap = QuantityMap.query.filter_by(id=qmap_id).first_or_404()
     form = EditQuantityMapForm(obj=qmap)
     if form.validate_on_submit():
         form.populate_obj(qmap)
         db.session.commit()
-        quantity_map_updated.delay(qmap.id)
         flash(f'Changes saved')
         return jsonify(status='ok')
 
@@ -212,7 +305,7 @@ def delete_quantity_map():
     """Deletes a quantity map."""
     qmap = QuantityMap.query.filter_by(id=request.form['qmap_id']).first_or_404()
     db.session.delete(qmap)
-    db.session.commit(qmap)
+    db.session.commit()
     flash(f'Quantity map {qmap.text}={qmap.quantity} deleted.')
     return jsonify(status='ok')
 
@@ -245,7 +338,8 @@ def products():
             app.config['MAX_PAGE_ITEMS'],
             False
         ),
-        result_count=products.count()
+        result_count=products.count(),
+        total_products=Product.query.count()
     )
 
 
@@ -292,7 +386,8 @@ def product_details(product_id):
         db.or_(
             Opportunity.market_id == product_id,
             Opportunity.supply_id == product_id
-        )
+        ),
+        Opportunity.hidden.is_(None)
     ).paginate(page_num, app.config['MAX_PAGE_ITEMS'], False)
 
     return render_template(
@@ -304,7 +399,7 @@ def product_details(product_id):
     )
 
 
-@app.route('/products/edit/<product_id>', methods=['GET', 'POST'])
+@app.route('/products/<product_id>/edit', methods=['GET', 'POST'])
 @login_required
 def edit_product_form(product_id):
     """Renders the Edit Product form."""
@@ -317,6 +412,18 @@ def edit_product_form(product_id):
         return jsonify(status='ok')
 
     return render_template('forms/product.html', title='Edit Product', form=form)
+
+
+@app.route('/products/<product_id>/set', methods=['POST'])
+def set_product_attr(product_id):
+    """A generic endpoint for setting product properties."""
+    product = Product.query.filter_by(id=product_id).first_or_404()
+
+    if 'tags[]' in request.form:
+        product.tags = request.form.getlist('tags[]')
+
+    db.session.commit()
+    return jsonify(status='ok')
 
 
 @app.route('/products/delete', methods=['POST'])
@@ -349,6 +456,54 @@ def tag_products():
     db.session.commit()
     return jsonify(status='ok')
 
+
+@app.route('/products/<product_id>/addopp', methods=['GET', 'POST'])
+def add_opportunity_form(product_id):
+    """Adds a supplier or market relationship to a product."""
+    product = Product.query.filter_by(id=product_id).first_or_404()
+    form = AddOpportunityForm()
+
+    if form.validate_on_submit():
+        add_product = Product.query.filter_by(vendor_id=form.vendor_id.data, sku=form.sku.data).first()
+        as_supplier = form.supply_or_market.data
+
+        if as_supplier:
+            product.add_supplier(add_product)
+        else:
+            product.add_market(add_product)
+
+        return jsonify(status='ok')
+
+    return render_template('forms/add_opportunity.html', form=form)
+
+
+@app.route('/products/<product_id>/history')
+def history(product_id):
+    """Return history data for a given product."""
+    frame = request.args.get('frame', 'day')
+    start = datetime.datetime.utcnow()
+
+    if frame == 'day':
+        start -= datetime.timedelta(days=1)
+    elif frame == 'week':
+        start -= datetime.timedelta(weeks=1)
+    elif frame == 'month':
+        start -= datetime.timedelta(days=31)
+    else:
+        raise ValueError(f'Invalid value for frame: {frame}')
+
+    history = ProductHistory.query.filter(
+        ProductHistory.product_id == product_id,
+        ProductHistory.timestamp >= start
+    ).all()
+
+    return jsonify({
+        'labels': [h.timestamp for h in history],
+        'rank': [h.rank for h in history],
+        'price': [float(h.price) for h in history]
+    })
+
+
 ########################################################################################################################
 # Opportunities
 
@@ -374,9 +529,20 @@ def opportunities():
 
     return render_template(
         'opportunities.html',
-        opps_page=opps,
-        form=form
+        title='Opportunities',
+        opps=opps,
+        form=form,
+        total_opps=Opportunity.query.count()
     )
+
+
+@app.route('/opportunities/delete', methods=['POST'])
+@login_required
+def delete_opps():
+    ids = request.form.getlist('ids[]')
+    Opportunity.query.filter(Opportunity.id.in_(ids)).delete(synchronize_session=False)
+    db.session.commit()
+    return jsonify(status='ok')
 
 
 ########################################################################################################################
@@ -387,12 +553,12 @@ def opportunities():
 @login_required
 def jobs():
     """The top-level Jobs index."""
-    jobs = Job.query.all()
+    jobs = Job.query.paginate(per_page=app.config['MAX_PAGE_ITEMS'])
     return render_template(
         'jobs.html',
         title='Jobs',
         jobs=jobs,
-        result_count=Job.query.count()
+        now=datetime.datetime.utcnow()
     )
 
 
@@ -404,9 +570,11 @@ def new_job_form():
     if form.validate_on_submit():
         job = Job(
             name=form.name.data,
-            schedule={form.schedule_type.data: ast.literal_eval(form.schedule_kwargs.data)},
+            schedule_type=form.schedule_type.data,
+            schedule_kwargs=ast.literal_eval(form.schedule_kwargs.data),
             enabled=form.enabled.data,
-            task={form.task.data: ast.literal_eval(form.task_kwargs.data)}
+            task_type=form.task.data,
+            task_kwargs=ast.literal_eval(form.task_kwargs.data)
         )
 
         db.session.add(job)
@@ -436,18 +604,20 @@ def edit_job_form(job_id):
 
     if request.method == 'POST' and form.validate_on_submit():
         job.name = form.name.data
-        job.schedule = {form.schedule_type.data: ast.literal_eval(form.schedule_kwargs.data)}
-        job.task = {form.task.data: ast.literal_eval(form.task_kwargs.data)}
+        job.schedule_type = form.schedule_type.data
+        job.schedule_kwargs = ast.literal_eval(form.schedule_kwargs.data)
+        job.task_type = form.task.data
+        job.task_kwargs = ast.literal_eval(form.task_kwargs.data)
         job.enabled = form.enabled.data
         db.session.commit()
         flash(f'Changes saved')
         return jsonify(status='ok')
     elif request.method == 'GET':
         form.name.data = job.name
-        form.schedule_type.data = list(job.schedule.keys())[0] if job.schedule else None
-        form.schedule_kwargs.data = job.schedule[form.schedule_type.data] if job.schedule else None
-        form.task.data = list(job.task.keys())[0] if job.task else None
-        form.task_kwargs.data = job.task[form.task.data] if job.task else None
+        form.schedule_type.data = job.schedule_type
+        form.schedule_kwargs.data = job.schedule_kwargs
+        form.task.data = job.task_type
+        form.task_kwargs.data = job.task_kwargs
         form.enabled.data = job.enabled
 
     return render_template('forms/job.html', title='Edit Job', form=form)
@@ -466,7 +636,6 @@ def delete_job():
 @app.route('/jobs/control', methods=['POST'])
 def control_jobs():
     action = request.form['action']
-    print(f'control_jobs: {action}')
 
     if action == 'start':
         jobs = Job.query.all()
@@ -477,4 +646,19 @@ def control_jobs():
     elif action == 'stop':
         jobs = Job.query.all()
         for job in jobs:
-            job.entry.delete()
+            try:
+                job.entry.delete()
+            except AttributeError:
+                pass
+
+    return jsonify(status='ok')
+
+
+@app.route('/jobs/schedule')
+def jobs_schedule():
+    scheduler = RedBeatScheduler(app=celery_app)
+    return render_template(
+        'jobs_schedule.html',
+        schedule=scheduler.schedule.values(),
+        now=datetime.datetime.utcnow()
+    )

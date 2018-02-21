@@ -1,0 +1,78 @@
+<nav class="navbar navbar-expand-md navbar-dark bg-dark">
+    <a class="navbar-brand" href="{{ url_for('index') }}">
+        <h3>
+            Colander
+        </h3>
+    </a>
+    <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle Navigation">
+        <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarNav">
+        <ul class="navbar-nav mr-auto">
+            <li class="nav-item">
+                <a class="nav-link {% if active_tab == 'vendors' %}active{% endif %}" href="{{ url_for('vendors') }}">
+                    Vendors
+                </a>
+            </li>
+            <li class="nav-item dropdown">
+                <a class="nav-link dropdown-toggle {% if active_tab == 'products' %}active{% endif %}" href="#" role="button" data-toggle="dropdown">
+                    Products
+                </a>
+                <div class="dropdown-menu">
+                    <a class="dropdown-item" href="{{ url_for('products') }}">
+                        <span data-feather="search"></span>
+                        Search
+                    </a>
+                    <div class="dropdown-divider"></div>
+                    <a class="dropdown-item" href="{{ url_for('products', tags=['inventory']) }}">
+                        <span data-feather="package"></span>
+                        Inventory
+                    </a>
+                    <a class="dropdown-item" href="{{ url_for('products', tags=['watch']) }}">
+                        <span data-feather="eye"></span>
+                        Watched
+                    </a>
+                </div>
+            </li>
+            <li class="nav-item dropdown">
+                <a class="nav-link dropdown-toggle {% if active_tab == 'opportunities' %}active{% endif %}" href="#" role="button" data-toggle="dropdown">
+                    Opportunities
+                </a>
+                <div class="dropdown-menu">
+                    <a class="dropdown-item" href="{{ url_for('opportunities') }}">
+                        <span data-feather="search"></span>
+                        Search
+                    </a>
+                    <div class="dropdown-divider"></div>
+                    <a class="dropdown-item" href="{{ url_for('opportunities', tags=['inventory']) }}">
+                        <span data-feather="package"></span>
+                        Inventory
+                    </a>
+                    <a class="dropdown-item" href="{{ url_for('opportunities', tags=['watch']) }}">
+                        <span data-feather="eye"></span>
+                        Watched
+                    </a>
+                </div>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if active_tab == 'jobs' %}active{% endif %}" href="{{ url_for('jobs') }}">
+                    Jobs
+                </a>
+            </li>
+            <li class="nav-item mr-auto">
+                <a class="nav-link {% if active_tab == 'quantity_maps' %}active{% endif %}" href="{{ url_for('quantity_maps') }}">
+                    Quantity Maps
+                </a>
+            </li>
+        </ul>
+        {% if current_user.is_authenticated %}
+            <ul class="navbar-nav navbar-right">
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('logout') }}">
+                        Logout
+                    </a>
+                </li>
+            </ul>
+        {% endif %}
+    </div>
+</nav>

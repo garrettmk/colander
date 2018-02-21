@@ -1,84 +1,144 @@
-{% extends "base.html" %}
+{% extends "secondary_base.html" %}
 
 {% block scripts %}
     {{ super() }}
     <script>
         $(document).ready(function() {
-            {{ macros.dynamic_form('newJobBtn', 'newJobDlg', url_for('new_job_form'), 'jobForm', 'jobFormSubmit') }}
+            setModalFormLauncher('#newJobBtn', '#newJobDlg', '{{ url_for('new_job_form') }}');
 
-            $('#startStopBtn').click(function(event) {
-                if ($('#startStopBtn').text() == 'Start All') {
+            $('#startStopBtn').click(function() {
+                if ($(this).text().indexOf('Start') >= 0) {
                     $.post('{{ url_for('control_jobs') }}', data={action: 'start'});
-                    $('#startStopBtn').html('Stop All');
+                    $(this).removeClass('btn-outline-success').addClass('btn-outline-danger');
+                    $(this).html('<span data-feather="octagon"></span> Stop All');
+                    feather.replace();
                 } else {
                     $.post('{{ url_for('control_jobs') }}', data={action: 'stop'});
-                    $('#startStopBtn').html('Start All');
+                    $(this).removeClass('btn-outline-danger').addClass('btn-outline-success');
+                    $(this).html('<span data-feather="play"></span> Start All');
+                    feather.replace();
                 }
             });
+
+
+            updateSchedule();
+            window.setInterval(updateSchedule, 5000);
         });
+
+        function deleteJob(jobId) {
+            var confirmed = confirm('Are you sure you want to delete this job?');
+            if (confirmed) {
+                $.post('{{ url_for('delete_job') }}', data={job_id: jobId}, function() {
+                    location.reload();
+                });
+            }
+        };
+
+        function updateSchedule() {
+            $.get('{{ url_for('jobs_schedule') }}', function(data) {
+                $('#scheduleArea').html(data);
+                flask_moment_render_all();
+            });
+        }
+
     </script>
 {% endblock %}
 
+
 {% block modals %}
-    {{ super() }}
-    <div class="modal fade" id="newJobDlg" tabindex="-1" role="dialog">
-        <div class="modal-dialog" role="document">
-            <div class="modal-content">
-            </div>
-        </div>
-    </div>
+    {{ macros.empty_modal('newJobDlg', 'New Job', 'Create') }}
+    {{ macros.empty_modal('editJobDlg', 'Edit Job', 'Ok') }}
 {% endblock %}
+
 
 {% block navbar %}
     {% set active_tab = 'jobs' %}
     {% include 'navbar.html' %}
 {% endblock %}
 
+
+{% block document_tools %}
+    <button id="newJobBtn" type="button" class="btn btn-sm btn-outline-secondary mr-2" data-toggle="modal">
+        <span data-feather="plus"></span>
+        New
+    </button>
+    <button id="startStopBtn" type="button" class="btn btn-sm btn-outline-success">
+        <span data-feather="play"></span>
+        Start All
+    </button>
+{% endblock %}
+
+
 {% block content %}
-    <div class="navbar navbar-expand-lg navbar-dark bg-secondary">
-        <ul class="navbar-nav">
-            <li class="navbar-brand">Jobs</li>
-            <li class="nav-item">
-                <button id="newJobBtn" type="button" class="btn btn-primary" data-toggle="modal">New</button>
-            </li>
-            <li class="nav-item">
-                <button id="startStopBtn" type="button" class="btn btn-primary ml-2">Start All</button>
-            </li>
-        </ul>
+    <div id="scheduleArea" class="w-100 mb-5">
+        <!-- Schedule -->
     </div>
-    <div class="container-fluid mt-3">
-        <div class="row justify-content-start mt-5">
-            <div class="col">
-                Showing {{ result_count }} results:
+    <div class="d-flex flex-row flex-wrap align-items-stretch w-100 mb-3">
+        {% for job in jobs.items %}
+            <div class="card mr-2 mb-2" style="width: 18rem;">
+                <div class="card-img-top img-frame border-bottom bg-secondary" style="height: 18rem;">
+                    <div class="d-flex justify-content-center align-items-center bg-primary" style="position: absolute; top: 0; left: 0; width: 2rem; height: 2rem; border-radius: .25rem 0px;">
+                        <input type="checkbox">
+                    </div>
+                    <span class="text-white" data-feather="settings" style="width: 80%; height: 80%;"></span>
+                </div>
+                <div class="d-flex flex-column card-body">
+                    <h5 class="card-title">{{ job.name }}</h5>
+                    <h6 class="card-subtitle text-muted pb-3 mb-auto">{{ job.task_type.split('.')[-1] }}</h6>
+                    <table class="w-100" style="">
+                        <tr>
+                            <th class="text-muted" scope="row">Schedule:</th>
+                            <td>{{ job.schedule_type }}</td>
+                        </tr>
+                        <tr>
+                            <th class="text-muted" scope="row">Enabled:</th>
+                            <td>{{ as_yesno(job.enabled) }}</td>
+                        </tr>
+                    {% if job.entry %}
+                        <tr>
+                            <td colspan="2">
+                                <div class="w-100 border-top my-1"></div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted font-sm">Last run:</td>
+                            <td class="font-sm">
+                                {% if job.entry.last_run_at %}
+                                    {{ moment(job.entry.last_run_at).format('MMM Do H:mm:ss') }}
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted font-sm">Due next:</td>
+                            <td class="font-sm">
+                                {% if job.entry.last_run_at %}
+                                    {{ moment(now + job.entry.schedule.remaining_estimate(job.entry.last_run_at)).format('MMM Do H:mm:ss') }}
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted font-sm">Run count:</td>
+                            <td class="font-sm">{{ job.entry.total_run_count }}</td>
+                        </tr>
+                    {% endif %}
+                    </table>
+                </div>
+                <div class="card-footer">
+                    <a class="mr-2" href="javascript:modalForm('#editJobDlg', '{{ url_for('edit_job_form', job_id=job.id) }}');">Edit</a>
+                    <a class="text-danger" href="javascript:deleteJob({{ job.id }});">Delete</a>
+                </div>
             </div>
-        </div>
-        <div class="row mt-3">
-            <div class="col">
-                <table class="table table-striped table-bordered mt-3">
-                    <thead>
-                        <th scope="col">id</th>
-                        <th scope="col">Name</th>
-                        <th scope="col">Task</th>
-                        <th scope="col">Schedule</th>
-                        <th scope="col">Enabled</th>
-                    </thead>
-                    <tbody>
-                        {% for job in jobs %}
-                            <tr>
-                                <th scope="row">{{ job.id }}</th>
-                                <td><a href="{{ url_for('job_details', job_id=job.id) }}">{{ job.name }}</a></td>
-                                <td>{{ job.task }}</td>
-                                <td>{{ job.schedule }}</td>
-                                <td>{{ as_yesno(job.enabled) }}</td>
-                            </tr>
-                        {% else %}
-                            <tr>
-                                <td colspan="5" class="text-center">No jobs to show.</td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
+        {% else %}
+            <p>
+                Press "New" to create jobs.
+            </p>
+        {% endfor %}
     </div>
+    {% if jobs.pages > 1 %}
+        {{ macros.show_pages(jobs, request.full_path) }}
+    {% endif %}
 {% endblock %}

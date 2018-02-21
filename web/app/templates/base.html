@@ -5,10 +5,10 @@
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-        <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+        <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap.min.css') }}">
         <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/font-awesome/4.1.0/css/font-awesome.min.css">
         <link rel="stylesheet" href="{{ url_for('static', filename='tagsinput.css') }}">
-        <link rel="stylesheet" href="{{ url_for('static', filename='colander.css') }}">
+        <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='colander.css') }}">
         {% if title %}
         <title>{{ title }} -  Colander</title>
         {% else %}
@@ -20,30 +20,17 @@
         {% endblock %}
 
         <!-- Navbar -->
-        <nav class="navbar navbar-expand-sm navbar-dark bg-dark pl-0">
-            <a class="navbar-brand col mr-auto" href="{{ url_for('index') }}"><h3>Colander</h3></a>
-            <div class="col-10">
-                {% block navbar %}
-                {% endblock %}
-            </div>
-            <div class="col d-flex justify-content-end">
-                {% if current_user.is_authenticated %}
-                <ul class="navbar-nav navbar-right">
-                    <li class="nav-item">
-                        <a class="nav-link mr-sm-2" href="{{ url_for('logout') }}">Logout</a>
-                    </li>
-                </ul>
-                {% endif %}
-            </div>
-        </nav>
+        {% block navbar %}
+            {% include "navbar.html" %}
+        {% endblock %}
 
         {% block base_content %}
         {% endblock %}
 
         <!-- Bootstrap + requirements -->
-        <script src="https://code.jquery.com/jquery-3.2.1.min.js" crossorigin="anonymous"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
-        <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta.3/js/bootstrap.min.js" integrity="sha384-a5N7Y/aK3qNeh15eJKGWxsqtnX/wWdSZSKp+81YjTmS15nvnvxKHuzaWwXHDli+4" crossorigin="anonymous"></script>
+        <script src="{{ url_for('static', filename='jquery-3.3.1.min.js') }}"></script>
+        <script src="{{ url_for('static', filename='popper.min.js') }}"></script>
+        <script src="{{ url_for('static', filename='bootstrap.min.js') }}"></script>
 
         <!-- Icons -->
         <script src="https://unpkg.com/feather-icons/dist/feather.min.js"></script>
@@ -53,6 +40,40 @@
 
         <!-- Tag input boxes -->
         <script src="{{ url_for('static', filename='tagsinput.js') }}"></script>
+
+        <!-- Moment -->
+        {{ moment.include_moment() }}
+
+        <!-- Modal forms -->
+        <script>
+            function modalForm(modal_id, form_endpoint) {
+                $.get(form_endpoint, function(data) {
+                    $(modal_id + ' .modal-body').html(data);
+                    $(modal_id + ' .modal-body input[data-role=tagsinput], select[multiple][data-role=tagsinput]').tagsinput();
+                    $(modal_id).modal('show');
+                });
+
+                $(modal_id + ' input[type=submit], button[type=submit]').click(function(event) {
+                    event.preventDefault();
+                    $.post(form_endpoint, data=$(modal_id + ' form').serialize(), function(data) {
+                        if (data.status === 'ok') {
+                            $(modal_id).modal('hide');
+                            location.reload();
+                        } else {
+                            $(modal_id + ' .modal-body').html(data);
+                            $(modal_id + ' .modal-body input[data-role=tagsinput], select[multiple][data-role=tagsinput]').tagsinput();
+                        }
+                    });
+                });
+            }
+
+            function setModalFormLauncher(launch_id, modal_id, form_endpoint) {
+                $(launch_id).click(function(event) {
+                    event.preventDefault();
+                    modalForm(modal_id, form_endpoint);
+                });
+            }
+        </script>
 
         <!-- Page-specific scripts -->
         {% block scripts %}{% endblock %}

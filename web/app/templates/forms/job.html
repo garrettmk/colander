@@ -1,21 +1,10 @@
 {% import "macros.html" as macros %}
 <form id="jobForm" action="" method="post">
-    <div class="modal-header">
-        <h5 class="modal-title">{{ title }}</h5>
-        <button type="button" class="close" data-dismiss="modal">
-            <span aria-hidden="true">&times;</span>
-        </button>
-    </div>
-    <div class="modal-body">
-        {{ form.hidden_tag() }}
-        {{ macros.form_field(form.name) }}
-        {{ macros.form_field(form.schedule_type) }}
-        {{ macros.form_field(form.schedule_kwargs) }}
-        {{ macros.form_field(form.task) }}
-        {{ macros.form_field(form.task_kwargs) }}
-        {{ macros.form_check(form.enabled) }}
-    </div>
-    <div class="modal-footer">
-        {{ macros.form_submit(form.submit, id='jobFormSubmit') }}
-    </div>
+    {{ form.hidden_tag() }}
+    {{ macros.form_field(form.name) }}
+    {{ macros.form_field(form.schedule_type) }}
+    {{ macros.form_field(form.schedule_kwargs) }}
+    {{ macros.form_field(form.task) }}
+    {{ macros.form_field(form.task_kwargs) }}
+    {{ macros.form_check(form.enabled) }}
 </form>

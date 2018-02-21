@@ -16,8 +16,10 @@ def BrowseNodeLookup(BrowseNodeId, ResponseGroup=None):
     raise NotImplementedError
 
 
-@celery_app.task
-def ItemLookup(asin=None, **kwargs):
+@celery_app.task(bind=True)
+def ItemLookup(self, asin=None, **kwargs):
+    kwargs.pop('priority', None)
+
     params = {
         'ResponseGroup': 'Images,ItemAttributes,OfferFull,SalesRank,EditorialReview',
         'ItemId': kwargs.pop('ItemId', asin),
@@ -25,7 +27,7 @@ def ItemLookup(asin=None, **kwargs):
     }
 
     response = AmzXmlResponse(
-        product_adv.ItemLookup(**params)
+        product_adv.ItemLookup(**params, priority=self.get_priority())
     )
 
     errors = {}
@@ -44,6 +46,7 @@ def ItemLookup(asin=None, **kwargs):
         product['sku'] = response.xpath_get('.//ASIN', item_tag)
         product['detail_url'] = f'http://www.amazon.com/dp/{product["sku"]}'
         product['rank'] = response.xpath_get('.//SalesRank', item_tag, _type=int)
+        product['category'] = response.xpath_get('.//ProductGroup', item_tag)
         product['image_url'] = response.xpath_get('.//LargeImage/URL', item_tag)
         product['brand'] = response.xpath_get('.//Brand', item_tag)\
             or response.xpath_get('.//Manufacturer', item_tag)\

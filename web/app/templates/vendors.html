@@ -1,68 +1,68 @@
 {% extends "secondary_base.html" %}
 
+
 {% block scripts %}
     {{ super() }}
     <script>
         $(document).ready(function() {
-            {{  macros.dynamic_form('newVendorBtn', 'newVendorDialog', url_for('new_vendor_form'), 'vendorForm', 'vendorFormSubmit') }}
+            setModalFormLauncher('#newVendorBtn', '#newVendorDlg', '{{ url_for('new_vendor_form') }}');
         });
     </script>
 {% endblock %}
 
+
 {% block modals %}
-    <div class="modal fade" id="newVendorDialog" tabindex="-1" role="dialog" aria-hidden="true">
-        <div class="modal-dialog modal-lg" role="document">
-            <div class="modal-content">
-            </div>
-        </div>
-    </div>
+    {{ macros.empty_modal('newVendorDlg', 'New Vendor', 'Create', large=True) }}
 {% endblock %}
 
-{% block sidebar %}
+
+{% block navbar %}
     {% set active_tab = 'vendors' %}
-    {% include 'sidebar_nav.html' %}
-    {% include 'vendor_nav.html' %}
+    {% include "navbar.html" %}
 {% endblock %}
+
 
 {% block document_tools %}
     <div class="btn-group btn-group-sm" role="group">
-        <button id="newVendorBtn" type="button" class="btn btn-outline-secondary" data-toggle="modal" data-target="#newVendor">
+        <button id="newVendorBtn" class="btn btn-outline-secondary" type="button">
             <span data-feather="plus"></span>
             New
         </button>
     </div>
 {% endblock %}
 
+
 {% block content %}
-    <div class="row justify-content-start mt-3">
-        <div class="col">
-            Showing {{ vendors|length }} results:
-        </div>
-    </div>
     <div class="row mt-3">
-        <div class="col">
-            <div class="table-responsive">
-                <table class="table table-striped table-bordered">
-                    <thead>
-                        <tr>
-                            <th scope="col">id</th>
-                            <th scope="col">Name</th>
-                            <th scope="col">Website</th>
-                            <th scope="col"># Products</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for vendor in vendors %}
-                        <tr>
-                            <th scope="row">{{ vendor.id }}</th>
-                            <td><a href="{{ url_for('vendor_details', vendor_id=vendor.id) }}">{{ vendor.name }}</a></td>
-                            <td><a href="{{ vendor.website }}">{{ vendor.website }}</a></td>
-                            <td>{{ vendor.products.count() }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+        <div class="col d-flex flex-wrap align-items-end">
+            {% for vendor in vendors.items %}
+                <div class="card ml-2 mb-2" style="width: 18rem;">
+                    <a href="{{ url_for('vendor_details', vendor_id=vendor.id) }}">
+                        <div class="card-img-top img-frame border-bottom" style="height: 18rem;">
+                            {% if vendor.image_url %}
+                                <img class="framed-img" src="{{ vendor.image_url }}">
+                            {% else %}
+                                <span class="framed-img text-dark w-100 h-100 m-4" data-feather="truck"></span>
+                            {% endif %}
+                        </div>
+                    </a>
+                    <div class="card-body">
+                        <h5 class="card-title">{{ vendor.name }}</h5>
+                        <h6 class="card-subtitle mb-3"><a href="{{ vendor.website }}">{{ vendor.website }}</a></h6>
+                        <p class="card-text">
+                            <b>Products: </b>{{ as_quantity(vendor.products.count()) }}<br>
+                            <b>Shipping: </b>{{ as_percent(vendor.ship_rate) }}
+                        </p>
+                    </div>
+                </div>
+            {% else %}
+                <p>
+                    Press "New" to add vendors.
+                </p>
+            {% endfor %}
         </div>
     </div>
+    {% if vendors.pages > 1%}
+        {{ macros.show_pages(vendors, request.full_path) }}
+    {% endif %}
 {% endblock %}

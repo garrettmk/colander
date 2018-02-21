@@ -4,6 +4,8 @@ flask-wtf
 flask-login
 flask-sqlalchemy
 flask-migrate
+flask-markdown
+flask-moment
 pymysql
 celery
 celery-redbeat

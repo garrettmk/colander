@@ -2,7 +2,7 @@ import ast
 from itertools import zip_longest
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, BooleanField, SubmitField, IntegerField, DecimalField, SelectField,\
-    TextAreaField, SelectMultipleField
+    TextAreaField, SelectMultipleField, RadioField
 from wtforms.fields.html5 import URLField
 from wtforms.ext.sqlalchemy.fields import QuerySelectField
 from wtforms.validators import DataRequired, URL, ValidationError, Optional, Length, NumberRange
@@ -154,7 +154,26 @@ class SearchOpportunitiesForm(FlaskForm):
         ('cogs', 'COGS'),
         ('profit', 'Profit'),
         ('roi', 'ROI'),
-        ('similarity', 'Similarity')
+        ('similarity', 'Similarity'),
+        ('updated', 'Last Update')
     ])
     sort_order = SelectField('Order', choices=[('asc', 'Ascending'), ('desc', 'Descending')])
     submit = SubmitField('Search')
+
+
+class AddOpportunityForm(FlaskForm):
+    vendor_id = SelectField('Vendor', coerce=int, validators=[DataRequired()])
+    sku = StringField('SKU', validators=[DataRequired()])
+    supply_or_market = RadioField('Type', coerce=int, choices=[(0, 'Supplier'), (1, 'Market')], validators=[DataRequired()])
+
+    submit = SubmitField('Add')
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.vendor_id.choices = [(v.id, v.name) for v in Vendor.query.order_by(Vendor.name.asc()).all()]
+
+    def validate_sku(self, sku):
+        vendor_id = int(self.vendor_id.data)
+        product = Product.query.filter_by(vendor_id=vendor_id, sku=sku.data).first()
+        if product is None:
+            raise ValidationError('Not a valid Vendor/SKU combination.')

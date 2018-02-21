@@ -28,13 +28,27 @@ mws_priority_limits = {
         }
     },
 
-    'GetMyFeesEstimate': {
+    'ListMatchingProducts': {
         0: {
-            'quota_max': 1,
+            'quota_max': 10,
         },
 
         1: {
-            'quota_max': 5,
+            'quota_max': 15,
+        },
+
+        2: {
+            'quota_max': 20
+        }
+    },
+
+    'GetMyFeesEstimate': {
+        0: {
+            'quota_max': 10,
+        },
+
+        1: {
+            'quota_max': 15,
         },
 
         2: {
@@ -44,15 +58,29 @@ mws_priority_limits = {
 
     'GetCompetitivePricingForASIN': {
         0: {
-            'quota_max': 1
+            'quota_max': 10
         },
 
         1: {
-            'quota_max': 5
+            'quota_max': 15
         },
 
         2: {
             'quota_max': 20
+        }
+    },
+
+    'ListInventorySupply': {
+        0: {
+            'quota_max': 20
+        },
+
+        1: {
+            'quota_max': 25
+        },
+
+        2: {
+            'quota_max': 30
         }
     }
 }
@@ -64,19 +92,31 @@ mws_priority_limits = {
 class MWSTask(celery_app.Task):
     """Common behaviors for all MWS API calls."""
     cache_ttl = 30
-    default_retry_delay = 5
     soft_time_limit = 30
     pending_expires = 200
     restore_rate_adjust = 0
     wait_adjust = 0
 
-    @staticmethod
-    def _use_requests(method, **kwargs):
+    request_timeout = (10, 30)  # The connect and read timeouts for requests.get()
+
+    options = {
+        'default_retry_delay': 10,
+        'retry_backoff': 5,
+        'max_retries': 6,
+        'autoretry_for': (
+            requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout
+        )
+    }
+
+    def _use_requests(self, method, **kwargs):
         """Adapter function that lets the amazonmws library use requests."""
         if method == 'POST':
             return requests.post(**kwargs)
         elif method == 'GET':
-            return requests.get(**kwargs)
+            response = requests.get(**kwargs, timeout=self.request_timeout)
+            if response.status_code == 500:
+                self.retry()
         else:
             raise ValueError('Unsupported HTTP method: ' + method)
 
@@ -106,7 +146,12 @@ class MWSTask(celery_app.Task):
     def __call__(self, *args, **kwargs):
         """Perform the API call."""
         self._api_name, self._action_name = self.name.split('.')[-2:]
-        self._api_name = 'ProductAdvertising' if self._api_name == 'product_adv' else self._api_name.capitalize()
+        if self._api_name == 'product_adv':
+            self._api_name = 'ProductAdvertising'
+        elif self._api_name == 'inventory':
+            self._api_name = 'FulfillmentInventory'
+        else:
+            self._api_name = self._api_name.capitalize()
 
         # Check the cache
         if kwargs.pop('use_cache', True):
@@ -114,20 +159,9 @@ class MWSTask(celery_app.Task):
             self._cached_value = self.get_cached_value()
 
         if self._cached_value is not None:
-            print(f'Using cached value {self._cache_key} cache_ttl: {self.cache_ttl}')
             self.run = self.return_cached_value
         else:
             self.run = self.make_api_call
-
-        # Before making the actual API call, try to de-serialize any possible JSON parameters.
-        # For example, Celery automatically convert lists to JSON strings
-
-        # parsed_kwargs = {}
-        # for key, value in kwargs.items():
-        #     try:
-        #         parsed_kwargs[key] = json.loads(value)
-        #     except (TypeError, json.decoder.JSONDecodeError):
-        #         parsed_kwargs[key] = value
 
         return super().__call__(*args, **kwargs)
 
@@ -189,16 +223,16 @@ class MWSTask(celery_app.Task):
 
     def make_api_call(self, *args, **kwargs):
         """Make the api call, save the value to the cache, and update usage statistics."""
-        priority = kwargs.pop('priority', 0)
+        priority = self.get_priority()
+        kwargs.pop('priority', None)
 
         self.load_api()
         self.load_throttle_limits(priority)
         self.load_usage()
 
-        wait = self.calculate_wait()
-        print(f'Wait time: {wait}')
-        time.sleep(wait + self.wait_adjust)
         try:
+            wait = self.calculate_wait()
+            time.sleep(wait + self.wait_adjust)
             return_value = getattr(self.api, self._action_name)(*args, **kwargs).text
         except Exception as e:
             self.save_usage()
@@ -211,8 +245,6 @@ class MWSTask(celery_app.Task):
     def save_usage(self):
         """Update the usage stats in the cache."""
         usage_key = self.name + '_usage'
-
-        # Because Lua can't do floats, we're going to convert everything to milliseconds. WTF Lua...
         now = monotonic()
         restore_rate = self._limits['restore_rate']
 
@@ -237,7 +269,6 @@ class MWSTask(celery_app.Task):
                 """
 
         values = self.redis.eval(script, 0)
-        print(f'restored={values[0]} last_request={values[1]}')
 
     def load_throttle_limits(self, priority):
         """Load custom throttle limits based on a task's name and priority."""
@@ -264,8 +295,6 @@ class MWSTask(celery_app.Task):
         self._limits.update(
             **mws_priority_limits.get(self._action_name, {}).get(priority, {})
         )
-
-        print(f'{self.name} throttle limits: {self._limits}')
 
     def load_api(self):
         """Loads the correct API object from amz_mws, based on the module name of the current task."""

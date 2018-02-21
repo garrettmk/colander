@@ -1,0 +1,7 @@
+{% import "macros.html" as macros %}
+<form id="addOpportunityForm" action="" method="post">
+    {{ form.hidden_tag() }}
+    {{ macros.form_field(form.vendor_id) }}
+    {{ macros.form_field(form.sku) }}
+    {{ macros.form_radios(form.supply_or_market) }}
+</form>
