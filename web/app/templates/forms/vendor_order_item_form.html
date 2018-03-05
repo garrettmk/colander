@@ -1,0 +1,20 @@
+{% import "macros.html" as macros %}
+<form id="vendorOrderItemForm" action="" method="post">
+    <div class="form-row">
+        <div class="col">
+            {{ form.hidden_tag() }}
+            {{ macros.form_field(form.vendor_id, disabled=True) }}
+        </div>
+        <div class="col">
+            {{ macros.form_field(form.sku) }}
+        </div>
+    </div>
+    <div class="form-row">
+        <div class="col">
+            {{ macros.form_field(form.price_each, prepend='$') }}
+        </div>
+        <div class="col">
+            {{ macros.form_field(form.quantity) }}
+        </div>
+    </div>
+</form>

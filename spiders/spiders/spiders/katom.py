@@ -7,6 +7,9 @@ from scrapy.linkextractors import LinkExtractor
 from scrapy.loader import ItemLoader
 from scrapy.loader.processors import TakeFirst, Join
 
+from scrapy_redis.spiders import RedisCrawlSpider, RedisMixin, RedisSpider
+from scrapy_redis.queue import PriorityQueue, SpiderPriorityQueue
+
 from ..items import ProductItem
 
 
@@ -49,19 +52,18 @@ class KatomProductLoader(ItemLoader):
             return None
 
 
-class KatomSpider(scrapy.Spider):
+class KatomSpider(RedisSpider):
     name = "katom"
-    human_name = "KaTom Restaurant Supply"
-    vendor_url = 'www.katom.com'
-
-    allowed_domains = [vendor_url]
-    start_urls = ['https://' + vendor_url]
+    allowed_domains = ['www.katom.com']
 
     def parse(self, response):
-        return scrapy.FormRequest(url='https://www.katom.com/account/login',
-                                  formdata={'email': 'prwlrspider@gmail.com',
-                                            'password': 'foofoo17'},
-                                  callback=self.after_login)
+        return scrapy.FormRequest(
+            url='https://www.katom.com/account/login',
+            formdata={'email': 'prwlrspider@gmail.com',
+            'password': 'foofoo17'},
+            callback=self.after_login,
+            meta={'start_url': response.url}
+        )
 
     def after_login(self, response):
         if b'Error' in response.body:
@@ -69,14 +71,18 @@ class KatomSpider(scrapy.Spider):
         else:
             self.logger.info('Login successful.')
 
-        return scrapy.Request('https://www.katom.com', callback=self.parse_category)
+        url = response.meta['start_url']
+        if '/cat/' in url:
+            return scrapy.Request(url, callback=self.parse_category)
+        else:
+            return scrapy.Request(url, callback=self.parse_product)
 
     def parse_category(self, response):
         """Drills down into subcategories. The deepest subcategories (the ones that show actual products) are
         parsed by parse_product_category()."""
 
         # If this is a bottom-level category, extract product listings
-        if response.css('div.row.prodDesc'):
+        if response.css('.btn-cart'):
             category = response.meta.get('category', response.css('.breadcrumb .active::text').extract_first())
             base_rank = response.meta.get('rank', 1)
 
@@ -95,7 +101,7 @@ class KatomSpider(scrapy.Spider):
 
         # Not a bottom-level category; drill down
         else:
-            le = LinkExtractor(allow=r'/cat/', deny=(r'tel:', r'\?'))
+            le = LinkExtractor(allow=r'/cat/', deny=(r'tel:', r'\?'), restrict_css='section#main a')
             for link in le.extract_links(response):
                 yield scrapy.Request(link.url, callback=self.parse_category)
 
@@ -118,7 +124,7 @@ class KatomSpider(scrapy.Spider):
 
         loader.add_value('detail_url', response.url)
         loader.add_value('category', response.meta.get('category', None))
-        loader.add_value('rank', response.meta.get('rank', 0))
+        loader.add_value('rank', response.meta.get('rank', None))
 
         return loader.load_item()
 

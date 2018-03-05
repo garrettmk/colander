@@ -16,17 +16,15 @@ class ColanderPipeline:
     def open_spider(self, spider):
         self.celery = Celery(
             'main',
-            broker=os.environ['REDIS_URL'],
-            backend=os.environ['REDIS_URL']
+            broker=os.environ['CELERY_REDIS_URL'],
+            backend=os.environ['CELERY_REDIS_URL']
         )
 
     def close_spider(self, spider):
         self.celery = None
 
     def process_item(self, item, spider):
-        vendor = spider.human_name
-        item_data = dict(item)
-        item_data.update(vendor=vendor)
+        item_data = {k: v for k, v in dict(item).items() if v is not None}
 
         self.celery.send_task(
             'tasks.ops.products.clean_and_import',

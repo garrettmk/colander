@@ -1,3 +1,15 @@
+.tab-pane {
+    padding: 1rem;
+}
+
+.tab-pane .section-table {
+    margin-top: -14px;
+}
+
+.section-table th {
+    border-top: none;
+}
+
 .font-sm {
     font-size: small;
 }

@@ -1,0 +1,149 @@
+{% extends "secondary_base.html" %}
+
+
+{% block scripts %}
+    {{ super() }}
+    <script>
+        $(document).ready(function() {
+            setModalFormLauncher('#addItemBtn', '#addItemDlg', '{{ url_for('new_vendor_order_item_form', order_id=order.id) }}');
+            setModalFormLauncher('#editOrderBtn', '#editOrderDlg', '{{ url_for('edit_vendor_order_form', order_id=order.id) }}');
+        });
+
+        function deleteOrderItem(item_id) {
+            var confirmed = confirm('Are you sure you want to delete this item?');
+            if (confirmed) {
+                $.post('/api/vendororderitem/'+item_id+'/delete', function() {
+                    location.reload();
+                });
+            }
+        }
+    </script>
+{% endblock %}
+
+
+{% block modals %}
+    {{ macros.empty_modal('editOrderDlg', 'Edit Order', 'Ok', large=True) }}
+    {{ macros.empty_modal('addItemDlg', 'Add Item', 'Ok') }}
+{% endblock %}
+
+
+{% block navbar %}
+    {% set active_tab = 'vendor_orders' %}
+    {% include "navbar.html" %}
+{% endblock %}
+
+
+{% block document_tools %}
+    <div class="btn-group btn-group-sm">
+        <button id="editOrderBtn" type="button" class="btn btn-outline-secondary">
+            <span data-feather="edit-2"></span>
+            Edit
+        </button>
+    </div>
+    <button id="deleteOrderBtn" type="button" class="btn btn-sm btn-outline-danger ml-2">
+        <span data-feather="x"></span>
+        Delete
+    </button>
+{% endblock %}
+
+
+{% block content %}
+    <div class="row mb-5">
+        <div class="col-3">
+            <table class="table">
+                <tbody>
+                    <tr>
+                        <th scope="row">Vendor</th>
+                        <td>{{ order.vendor.name }}</td>
+                        <th scope="row" class="text-right">Subtotal</th>
+                        <td class="text-right">{{ as_money(order.subtotal) }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Order number</th>
+                        <td>{{ order.order_number }}</td>
+                        <th scope="row" class="text-right">Sales tax</th>
+                        <td class="text-right">{{ as_money(order.sales_tax) }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Order date</th>
+                        <td>{{ moment(order.order_date).format('MM/DD/YYYY') }}</td>
+                        <th scope="row" class="text-right">Shipping</th>
+                        <td class="text-right">{{ as_money(order.shipping) }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Items</th>
+                        <td>{{ as_quantity(order.items.count()) }}</td>
+                        <th scope="row" class="text-right">Total</th>
+                        <td class="text-right">{{ as_money(order.total) }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Order items -->
+    <div class="title-section">
+        <span class="subtitle">Order Items</span>
+        <div class="btn-group btn-group-sm" role="group">
+            <button id="addItemBtn" type="button" class="btn btn-outline-secondary">
+                <span data-feather="plus"></span>
+                Add...
+            </button>
+        </div>
+    </div>
+
+    {% if order.items.count() %}
+    <table class="table">
+        <thead>
+            <tr>
+                <th scope="col">SKU</th>
+                <th scope="col">Description</th>
+                <th scope="col" class="text-right">Price</th>
+                <th scope="col" class="text-right">Quantity</th>
+                <th scope="col" class="text-right">Subtotal</th>
+                <th scope="col">Delivery</th>
+                <th scope="col">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for item in order.items %}
+            <tr>
+                <td>
+                    <a href="{{ url_for('product_details', product_id=item.product_id) }}">
+                        {{ item.product.sku }}
+                    </a>
+                </td>
+                <td>
+                    {{ item.product.title }}
+                </td>
+                <td class="text-right">
+                    {{ as_money(item.price_each) }}
+                </td>
+                <td class="text-right">
+                    {{ as_quantity(item.quantity) }}
+                </td>
+                <td class="text-right">
+                    {{ as_money(item.subtotal) }}
+                </td>
+                <td>
+                    {{ item.delivery_id }}
+                </td>
+                <td>
+                    <a title="Edit" class="text-muted mr-2" href="javascript: modalForm('#addItemDlg', '{{ url_for('edit_vendor_order_item_form', item_id=item.id) }}')">
+                        <span data-feather="edit-2"></span>
+                    </a>
+                    <a href="#" title="Add to delivery..." class="text-muted mr-2">
+                        <span data-feather="truck"></span>
+                    </a>
+                    <a title="Delete" class="text-danger mr-2" href="javascript: deleteOrderItem({{ item.id }})">
+                        <span data-feather="x"></span>
+                    </a>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    Press "Add" to add items to this order.
+    {% endif %}
+{% endblock %}

@@ -3,6 +3,23 @@
 
 {% block scripts %}
     {{ super() }}
+    <script>
+        function hideSelectedOpps(reason) {
+            var selected = $('.opportunitySelector:checked').map(function() {return $(this).val()}).get();
+            var hide = confirm('Are you sure you want to hide these opportunities?');
+            if (hide) {
+                selected.forEach(function(id) {
+                    $.ajax('/api/opps/' + id, {
+                        type: 'POST',
+                        data: JSON.stringify({hidden: reason}),
+                        contentType: 'application/json',
+                    })
+                });
+
+                location.reload();
+            }
+        }
+    </script>
 {% endblock %}
 
 
@@ -66,12 +83,40 @@
         </form>
 
         <div class="title-section">
-            <span class="subtitle">{{ as_quantity(opps.total) }} total opportunities:</span>
+            <span class="subtitle mr-auto">{{ as_quantity(opps.total) }} total opportunities:</span>
+            <div class="btn-group btn-group-sm mr-3" role="group">
+                <div class="btn-group btn-group-sm" role="group">
+                    <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-toggle="dropdown">
+                        <span data-feather="settings"></span>
+                        Action on selected
+                    </button>
+                    <div class="dropdown-menu dropdown-menu-right">
+                        <a class="dropdown-item">Tags...</a>
+                        <div class="dropdown-divider"></div>
+                        <a class="dropdown-item" href="javascript:hideSelectedOpps('hidden');">Hide</a>
+                        <a class="dropdown-item" href="javascript:hideSelectedOpps('invalid');">Bad match</a>
+                    </div>
+                </div>
+            </div>
             {{ macros.show_pages(opps, request.full_path) }}
         </div>
 
         {{ macros.opps_table(opps.items) }}
-        {{ macros.show_pages(opps, request.full_path) }}
+        <div class="d-flex flex-row justify-content-end mt-3 w-100">
+            <div class="btn-group btn-group-sm mr-3" role="group">
+                <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-toggle="dropdown">
+                    <span data-feather="settings"></span>
+                    Action on selected
+                </button>
+                <div class="dropdown-menu dropdown-menu-right">
+                    <a class="dropdown-item">Tags...</a>
+                    <div class="dropdown-divider"></div>
+                    <a class="dropdown-item" href="javascript:hideSelectedOpps('hidden');">Hide</a>
+                    <a class="dropdown-item" href="javascript:hideSelectedOpps('invalid');">Bad match</a>
+                </div>
+            </div>
+            {{ macros.show_pages(opps, request.full_path) }}
+        </div>
     {% else %}
         There are no opportunities in the database.
     {% endif %}

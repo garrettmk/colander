@@ -48,9 +48,11 @@
         window.setInterval(updateRedisMemUsage, 60000);
 
         function updateRedisMemUsage() {
-            $.get('{{ url_for('redis_info', section='memory') }}', function(data) {
-                var label = moment().format('HH:mm');
-                var used = data.used_memory / 1024 / 1024;  // Put it in MB
+            var label = moment().format('HH:mm');
+            var used;
+
+            $.get('{{ url_for('redis_info', db=celery_redis_db, section='memory') }}', function(data) {
+                used = data.used_memory / 1024 / 1024;  // Put it in MB
                 redisMemChart.data.labels.push(label);
                 redisMemChart.data.datasets[0].data.push(used);
                 redisMemChart.update();

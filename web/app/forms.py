@@ -2,12 +2,12 @@ import ast
 from itertools import zip_longest
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, BooleanField, SubmitField, IntegerField, DecimalField, SelectField,\
-    TextAreaField, SelectMultipleField, RadioField
+    TextAreaField, SelectMultipleField, RadioField, DateField, DateTimeField
 from wtforms.fields.html5 import URLField
 from wtforms.ext.sqlalchemy.fields import QuerySelectField
 from wtforms.validators import DataRequired, URL, ValidationError, Optional, Length, NumberRange
 
-from app.models import Vendor, QuantityMap, Product
+from app.models import Vendor, QuantityMap, Product, VendorOrder, AmzReportLineMixin
 
 
 ########################################################################################################################
@@ -86,6 +86,7 @@ class EditProductForm(FlaskForm):
         super().__init__(*args, **kwargs)
         self.edit_product = kwargs.get('obj', None)
         self.vendor_id.choices = [(v.id, v.name) for v in Vendor.query.order_by(Vendor.name.asc()).all()]
+
         if self.edit_product and self.edit_product.tags:
             self.tags.choices = [(tag, tag) for tag in self.edit_product.tags]
         else:
@@ -119,9 +120,12 @@ class EditJobForm(FlaskForm):
     schedule_kwargs = StringField('Arguments', validators=[DataRequired()])
     task = SelectField('Task', choices=[
         ('tasks.jobs.jobs.dummy', 'Dummy'),
-        ('tasks.jobs.jobs.track_amazon_products', 'Track Amazon Products')
+        ('tasks.jobs.jobs.track_amazon_products', 'Track Amazon Products'),
+        ('tasks.jobs.jobs.update_inventory', 'Update FBA Inventory'),
+        ('tasks.jobs.jobs.crawl_url', 'Crawl URL'),
+        ('tasks.jobs.jobs.update_vendor_rates', 'Update Vendor Rates')
     ])
-    task_kwargs = StringField('Arguments', validators=[Optional()])
+    task_params = StringField('Parameters', validators=[Optional()])
     enabled = BooleanField('Enabled', default=False)
 
     submit = SubmitField('Ok')
@@ -132,7 +136,7 @@ class EditJobForm(FlaskForm):
         except Exception as e:
             raise ValidationError(repr(e))
 
-    def validate_task_kwargs(self, field):
+    def validate_task_params(self, field):
         try:
             ast.literal_eval(field.data)
         except Exception as e:
@@ -177,3 +181,50 @@ class AddOpportunityForm(FlaskForm):
         product = Product.query.filter_by(vendor_id=vendor_id, sku=sku.data).first()
         if product is None:
             raise ValidationError('Not a valid Vendor/SKU combination.')
+
+
+class EditVendorOrderForm(FlaskForm):
+    vendor_id = SelectField('Vendor', coerce=int, validators=[DataRequired()])
+    order_number = StringField('Order number', validators=[DataRequired()])
+    order_date = DateField('Order date', format='%m/%d/%Y', validators=[Optional()])
+    sales_tax = DecimalField('Sales tax', validators=[Optional()])
+    shipping = DecimalField('Shipping', validators=[Optional()])
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.vendor_id.choices = [(v.id, v.name) for v in Vendor.query.order_by(Vendor.name.asc()).all()]
+        self.edit_order = kwargs.get('obj', None)
+
+    def validate_order_number(self, order_num):
+        order = VendorOrder.query.filter_by(vendor_id=self.vendor_id.data, order_number=order_num.data).first()
+        if order and order is not self.edit_order:
+            raise ValidationError('Order number already in use for this vendor.')
+
+
+class EditVendorOrderItemForm(FlaskForm):
+    vendor_id = SelectField('Vendor', coerce=int, validators=[Optional()])  # Just used for display purposes
+    sku = StringField('SKU', validators=[DataRequired()])
+    price_each = DecimalField('Price', validators=[DataRequired()])
+    quantity = IntegerField('Quantity', validators=[DataRequired()])
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.vendor_id.choices = [(v.id, v.name) for v in Vendor.query.order_by(Vendor.name.asc()).all()]
+        self.order = kwargs.get('order', None)
+
+    def validate_sku(self, sku):
+        vendor_id = self.order.vendor_id if self.order is not None else self.vendor_id.data
+        product = Product.query.filter_by(vendor_id=vendor_id, sku=sku.data).first()
+        if product is None:
+            raise ValidationError('Not a valid SKU for this vendor.')
+
+
+class ReportForm(FlaskForm):
+    type = SelectField('Report type', validators=[DataRequired()])
+    start_date = DateTimeField('Start date', validators=[Optional()])
+    end_date = DateTimeField('End date', validators=[Optional()])
+    # options = StringField('Options', validators=[Optional()])
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.type.choices = [(t.report_type, t.report_type) for t in AmzReportLineMixin.__subclasses__()]

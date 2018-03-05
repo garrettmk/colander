@@ -1,6 +1,11 @@
 import re
 import decimal
 import json
+import urllib
+import collections
+import redis
+import os
+
 from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import UserMixin
@@ -73,12 +78,21 @@ def jinja_context_funcs():
         else:
             return url + '?page=%d' % page
 
+    def urlencode(s):
+        return urllib.parse.quote_plus(s)
+
+    def google(*args):
+        q = ' '.join((str(a) for a in args))
+        return 'http://www.google.com/search?as_q=' + urllib.parse.quote_plus(q)
+
     return dict(
         as_money=as_money,
         as_percent=as_percent,
         as_quantity=as_quantity,
         as_yesno=as_yesno,
         set_page_number=set_page_number,
+        urlencode=urlencode,
+        google=google,
         Vendor=Vendor,
         Product=Product
     )
@@ -90,6 +104,36 @@ def jinja_context_funcs():
 @login.user_loader
 def load_user(id):
     return User.query.get(int(id))
+
+
+########################################################################################################################
+
+
+class UpdateMixin:
+    extra = db.Column(db.JSON, default={})
+
+    def update(self, *args, **kwargs):
+        """Update attributes on the object. Unknown attributes are stored in the model's 'extra' attribute."""
+        data = {}
+
+        if len(args) == 1 and isinstance(args[0], collections.Mapping):
+            data.update(args[0])
+        elif len(args) > 1:
+            raise ValueError('update() only accepts a single key-value mapping as a positional parameter.')
+
+        data.update(kwargs)
+        extra = {}
+
+        for key, value in data.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+            else:
+                extra[key] = value
+
+        if self.extra:
+            self.extra.update(extra)
+        else:
+            self.extra = extra
 
 
 ########################################################################################################################
@@ -127,11 +171,24 @@ class Vendor(db.Model):
     website = db.Column(db.String(64), index=True, unique=True)
     image_url = db.Column(db.String(256))
     ship_rate = db.Column(CURRENCY, default=0)
+    avg_market_fees = db.Column(CURRENCY, default=0)
 
     products = db.relationship('Product', backref='vendor', lazy='dynamic', passive_deletes=True)
+    orders = db.relationship('VendorOrder', backref='vendor', lazy='dynamic', passive_deletes=True)
 
     def __repr__(self):
         return f'<{type(self).__name__} {self.name}>'
+
+    def calculate_fee_rate(self):
+        self.avg_market_fees = db.session.query(
+            db.func.avg(Product.market_fees / Product.price)
+        ).filter(
+            Product.vendor_id == self.id,
+            Product.price > 0,
+            Product.market_fees.isnot(None)
+        ).scalar()
+
+        return self.avg_market_fees
 
     @staticmethod
     def get_amazon():
@@ -158,7 +215,7 @@ class QuantityMap(db.Model):
     @classmethod
     def __declare_last__(cls):
         # Add a short delay when executing the task after an insert, to ensure that the qmap is committed to the DB
-        db.event.listen(cls, 'after_insert', lambda m, c, t: cls._update_products(t, 10))
+        db.event.listen(cls, 'after_insert', lambda m, c, t: cls._update_products(t, 3))
         db.event.listen(cls, 'after_update', lambda m, c, t: cls._update_products(t))
 
     @staticmethod
@@ -198,7 +255,7 @@ class ProductHistory(db.Model):
 ########################################################################################################################
 
 
-class Product(db.Model):
+class Product(db.Model, UpdateMixin):
     __table_args__ = (UniqueConstraint('vendor_id', 'sku'),)
 
     id = db.Column(db.Integer, primary_key=True)
@@ -219,23 +276,38 @@ class Product(db.Model):
     description = db.Column(db.Text)
 
     quantity_desc = db.Column(db.String(64))
-    data = db.Column(db.JSON)
     tags = db.Column(db.JSON, default=[])
 
     last_modified = db.Column(db.DateTime, default=db.func.now(), onupdate=db.func.now())
 
-    supply_listings = association_proxy('supply_relations', 'supply', creator=lambda l: Opportunity(supply=l))
-    market_listings = association_proxy('market_relations', 'market', creator=lambda l: Opportunity(market=l))
+    supply_listings = association_proxy('supply_opportunities', 'supply', creator=lambda l: Opportunity(supply=l))
+    market_listings = association_proxy('market_opportunities', 'market', creator=lambda l: Opportunity(market=l))
     history = db.relationship('ProductHistory', backref='product', lazy='dynamic', passive_deletes=True)
 
+    order_items = db.relationship('VendorOrderItem', backref='product', lazy='dynamic', passive_deletes=True)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.suppress_guessing = False
+
+    @orm.reconstructor
+    def __init_on_load__(self):
+        self.suppress_guessing = False
+
+    # Event handlers
 
     @classmethod
     def __declare_last__(cls):
-        db.event.listen(cls, 'after_insert', lambda m, c, t: cls._maybe_guess_quantity(t, 10))
+        db.event.listen(cls, 'before_insert', cls._maybe_clear_fees)
+        db.event.listen(cls, 'before_update', cls._maybe_clear_fees)
+        db.event.listen(cls, 'after_insert', lambda m, c, t: cls._maybe_guess_quantity(t, 3))
         db.event.listen(cls, 'after_update', lambda m, c, t: cls._maybe_guess_quantity(t))
 
     @staticmethod
     def _maybe_guess_quantity(target, delay=None):
+        if target.suppress_guessing:
+            return
+
         insp = db.inspect(target)
         changed = insp.attrs['title'].history.has_changes() or \
                   insp.attrs['quantity_desc'].history.has_changes()
@@ -248,6 +320,132 @@ class Product(db.Model):
                 priority=DEFAULT_PRIORITY,
                 countdown=delay
             )
+            target.suppress_guessing = True
+
+    @staticmethod
+    def _maybe_clear_fees(mapper, conn, target):
+        insp = db.inspect(target)
+        price_changed = insp.attrs['price'].history.has_changes()
+        fees_changed = insp.attrs['market_fees'].history.has_changes()
+
+        if price_changed and not fees_changed:
+            target.market_fees = None
+
+    # Supplier order properties
+
+    @hybrid_property
+    def supplier_order_items(self):
+        return VendorOrderItem.query.filter(
+            VendorOrderItem.product_id.in_(l.id for l in self.supply_listings)
+        )
+
+    @hybrid_property
+    def supplier_order_total_units(self):
+        return sum(i.quantity for i in self.supplier_order_items.all())
+
+    @hybrid_property
+    def supplier_order_total_cost(self):
+        return sum(i.total for i in self.supplier_order_items.all())
+
+    @hybrid_property
+    def supplier_order_avg_unit_cost(self):
+        supplier_order_items = self.supplier_order_items.all()
+        return sum(i.total for i in supplier_order_items) / sum(i.quantity for i in supplier_order_items)
+
+    # Vendor order properties
+
+    @hybrid_property
+    def total_units_ordered(self):
+        return sum(item.quantity * self.quantity for item in self.order_items.all())
+
+    @total_units_ordered.expression
+    def total_units_ordered(cls):
+        return cls.quantity * db.select([
+            db.func.sum(VendorOrderItem.quantity)
+        ]).where(
+            VendorOrderItem.product_id == cls.id
+        ).label('total_units_ordered')
+
+    @hybrid_property
+    def total_ordered_cost(self):
+        return sum(
+            item.total for item in self.order_items.all()
+        )
+
+    @total_ordered_cost.expression
+    def total_ordered_cost(cls):
+        return db.select([
+            db.func.sum(VendorOrderItem.total)
+        ]).where(
+            VendorOrderItem.product_id == cls.id
+        ).label('total_ordered_cost')
+
+    @hybrid_property
+    def avg_unit_cost(self):
+        return self.total_ordered_cost / self.total_units_ordered
+
+    @avg_unit_cost.expression
+    def avg_unit_cost(cls):
+        return db.select([
+            db.func.sum(VendorOrderItem.total) / db.func.sum(VendorOrderItem.total_units)
+        ]).where(
+            VendorOrderItem.product_id == cls.id
+        ).label('avg_unit_cost')
+
+    # Market & opportunity properties
+
+    @hybrid_property
+    def market_fees_estimate(self):
+        return self.price * self.vendor.avg_market_fees
+
+    @market_fees_estimate.expression
+    def market_fees_estimate(cls):
+        return db.select([
+            db.cast(cls.price * Vendor.avg_market_fees, CURRENCY)
+        ]).where(
+            Vendor.id == cls.vendor_id
+        ).label('market_fees_estimate')
+
+    @hybrid_property
+    def total_suppliers(self):
+        return len(self.supply_listings)
+
+    @total_suppliers.expression
+    def total_suppliers(cls):
+        return db.select([
+            db.func.count(Opportunity.id)
+        ]).where(
+            Opportunity.market_id == cls.id
+        ).label('total_suppliers')
+
+    @hybrid_property
+    def total_markets(self):
+        return len(self.market_listings)
+
+    @total_markets.expression
+    def total_markets(cls):
+        return db.select([
+            db.func.count(Opportunity.id)
+        ]).where(
+            Opportunity.supply_id == cls.id
+        ).label('total_markets')
+
+    @hybrid_property
+    def total_opportunities(self):
+        return self.total_markets + self.total_suppliers
+
+    @total_opportunities.expression
+    def total_opportunities(cls):
+        return db.select([
+            db.func.count(Opportunity.id)
+        ]).where(
+            db.or_(
+                Opportunity.supply_id == cls.id,
+                Opportunity.market_id == cls.id
+            )
+        ).label('total_opportunities')
+
+    # Derived properties
 
     @hybrid_property
     def unit_price(self):
@@ -293,9 +491,41 @@ class Product(db.Model):
     def __repr__(self):
         return f'<{type(self).__name__} {self.sku}>'
 
+    # Helper methods
+
     @classmethod
-    def build_query(cls, query=None, tags=None, vendor_id=None):
+    def build_query(cls, *args, query=None, tags=None, vendor_id=None, total_suppliers=None, total_markets=None,
+                    total_opps=None):
+
+        if args and len(args) > 1:
+            raise ValueError('build_query() only accepts 1 positional argument.')
+        else:
+            arg = args[0] if args else None
+
         q = cls.query
+
+        if arg == 'inventory':
+            inv_skus = db.select([
+                FBAManageInventoryReportLine.asin
+            ]).where(
+                FBAManageInventoryReportLine.report_id == db.select([
+                    AmzReport.id
+                ]).where(
+                    db.and_(
+                        AmzReport.type == FBAManageInventoryReportLine.report_type,
+                        AmzReport.status == '_DONE_',
+                    )
+                ).order_by(
+                    AmzReport.start_date.desc()
+                ).limit(1)
+            )
+
+            q = q.filter(
+                Product.vendor_id == Vendor.get_amazon().id,
+                Product.sku.in_(inv_skus)
+            )
+        elif arg is not None:
+            raise ValueError(f'Unsupported argument: {arg}')
 
         if query:
             q_str = f'%{query}%'
@@ -320,17 +550,16 @@ class Product(db.Model):
                 vendor_id=vendor_id
             )
 
+        if total_suppliers is not None:
+            q = q.filter_by(total_suppliers=total_suppliers)
+
+        if total_markets is not None:
+            q = q.filter_by(total_markets=total_markets)
+
+        if total_opps is not None:
+            q = q.filter_by(total_opportunities=total_opps)
+
         return q
-
-    def update(self, data):
-        for key in list(data):
-            if hasattr(self, key):
-                setattr(self, key, data.pop(key))
-
-        if self.data is not None:
-            self.data.update(data)
-        else:
-            self.data = data
 
     def similarity_to(self, other):
         """Return the probability that this listing and other refer to the safe product."""
@@ -424,6 +653,193 @@ class Product(db.Model):
 ########################################################################################################################
 
 
+class VendorOrder(db.Model):
+    """Represents an inventory order."""
+    __table_args__ = (UniqueConstraint('vendor_id', 'order_number'),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    vendor_id = db.Column(db.Integer, db.ForeignKey('vendor.id', ondelete='RESTRICT'), nullable=False)
+    order_number = db.Column(db.String(64), nullable=False)
+    order_date = db.Column(db.Date, nullable=False, default=db.func.now())
+    sales_tax = db.Column(CURRENCY, default=0)
+    shipping = db.Column(CURRENCY, default=0)
+
+    items = db.relationship('VendorOrderItem', backref='order', lazy='dynamic', passive_deletes=True)
+
+    @hybrid_property
+    def subtotal(self):
+        return decimal.Decimal(sum((item.subtotal for item in self.items)))
+
+    @subtotal.expression
+    def subtotal(cls):
+        return db.select([
+            db.cast(
+                db.func.sum(VendorOrderItem.price_each * VendorOrderItem.quantity),
+                CURRENCY
+            )
+        ]).where(
+            VendorOrderItem.order_id == cls.id
+        ).label('subtotal')
+
+    @hybrid_property
+    def total(self):
+        return self.subtotal + self.sales_tax + self.shipping
+
+    @total.expression
+    def total(cls):
+        return db.select([
+            db.cast(
+                db.func.sum(VendorOrderItem.price_each * VendorOrderItem.quantity) + cls.sales_tax + cls.shipping,
+                CURRENCY
+            )
+        ]).where(
+            VendorOrderItem.order_id == cls.id
+        ).label('total')
+
+    @hybrid_property
+    def total_units(self):
+        return sum(
+            item.quantity * item.product.quantity for item in self.items.all()
+        )
+
+    @total_units.expression
+    def total_units(cls):
+        return db.select([
+            db.func.sum(
+                VendorOrderItem.quantity * Product.quantity
+            )
+        ]).where(
+            db.and_(
+                VendorOrderItem.order_id == cls.id,
+                Product.id == VendorOrderItem.product_id
+            )
+        ).label('total_units')
+
+    @hybrid_property
+    def shipping_per_unit(self):
+        return self.shipping / self.total_units
+
+    @shipping_per_unit.expression
+    def shipping_per_unit(cls):
+        return cls.shipping / cls.total_units
+
+    @hybrid_property
+    def sales_tax_per_unit(self):
+        return self.sales_tax / self.total_units
+
+    @sales_tax_per_unit.expression
+    def sales_tax_per_unit(cls):
+        return cls.sales_tax / cls.total_units
+
+
+########################################################################################################################
+
+
+class VendorOrderItem(db.Model):
+    """A single SKU in a single shipment of an order."""
+    id = db.Column(db.Integer, primary_key=True)
+    order_id = db.Column(db.Integer, db.ForeignKey('vendor_order.id', ondelete='CASCADE'), nullable=False)
+    product_id = db.Column(db.Integer, db.ForeignKey('product.id', ondelete='RESTRICT'), nullable=False)
+    quantity = db.Column(db.Integer, nullable=False)
+    price_each = db.Column(CURRENCY, nullable=False)
+    delivery_id = db.Column(db.Integer, db.ForeignKey('delivery.id'))
+
+    delivery = db.relationship('Delivery')
+
+    @classmethod
+    def _total_order_units(cls):
+        item_alias = db.aliased(VendorOrderItem)
+        product_alias = db.aliased(Product)
+
+        return db.select([
+            db.func.sum(
+                item_alias.quantity * product_alias.quantity
+            )
+        ]).where(
+            db.and_(
+                item_alias.order_id == cls.order_id,
+                product_alias.id == item_alias.product_id
+            )
+        ).label('total_order_units')
+
+    @hybrid_property
+    def subtotal(self):
+        return self.price_each * self.quantity
+
+    @subtotal.expression
+    def subtotal(cls):
+        return db.cast(cls.price_each * cls.quantity, CURRENCY)
+
+    @hybrid_property
+    def total_units(self):
+        return self.quantity * self.product.quantity
+
+    @total_units.expression
+    def total_units(cls):
+        return cls.quantity * db.select([
+            Product.quantity
+        ]).where(
+            Product.id == cls.product_id
+        ).label('product_units')
+
+    @hybrid_property
+    def shipping(self):
+        return self.order.shipping_per_unit * self.total_units
+
+    @shipping.expression
+    def shipping(cls):
+        return cls.total_units * db.select([
+            VendorOrder.shipping_per_unit
+        ]).where(
+            VendorOrder.id == cls.order_id,
+        ).label('shipping')
+
+    @hybrid_property
+    def sales_tax(self):
+        return self.order.sales_tax / self.order.total_units * self.total_units
+
+    @sales_tax.expression
+    def sales_tax(cls):
+        return cls.total_units * db.select([
+            VendorOrder.sales_tax_per_unit
+        ]).where(
+            VendorOrder.id == cls.order_id
+        ).label(
+            'sales_tax'
+        )
+
+    @hybrid_property
+    def total(self):
+        return self.subtotal + self.shipping + self.sales_tax
+
+    @total.expression
+    def total(cls):
+        return cls.subtotal + cls.total_units * db.select([
+            VendorOrder.sales_tax_per_unit + VendorOrder.shipping_per_unit
+        ]).where(
+            VendorOrder.id == cls.order_id
+        ).label('total')
+
+    @hybrid_property
+    def unit_cost(self):
+        return self.total / self.total_units
+
+
+########################################################################################################################
+
+
+class Delivery(db.Model):
+    """A shipment from a vendor."""
+    id = db.Column(db.Integer, primary_key=True)
+    order_id = db.Column(db.Integer, db.ForeignKey('vendor_order.id', ondelete='CASCADE'), nullable=False)
+    carrier = db.Column(db.Enum('ups', 'fedex', 'usps', 'dhl'))
+    tracking_number = db.Column(db.String(128))
+    delivered_on = db.Column(db.Date)
+
+
+########################################################################################################################
+
+
 class Opportunity(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     supply_id = db.Column(db.Integer, db.ForeignKey('product.id', ondelete='CASCADE'), nullable=False)
@@ -434,13 +850,13 @@ class Opportunity(db.Model):
     supply = db.relationship(
         Product,
         primaryjoin=(supply_id == Product.id),
-        backref=db.backref('market_relations', passive_deletes=True),
+        backref=db.backref('market_opportunities', passive_deletes=True, lazy='dynamic'),
         single_parent=True
     )
     market = db.relationship(
         Product,
         primaryjoin=(market_id == Product.id),
-        backref=db.backref('supply_relations', passive_deletes=True),
+        backref=db.backref('supply_opportunities', passive_deletes=True, lazy='dynamic'),
         single_parent=True
     )
 
@@ -448,12 +864,27 @@ class Opportunity(db.Model):
     _s_alias = db.aliased(Product)
 
     @classmethod
+    def _is_estimate_expr(cls):
+        return db.func.isnull(cls._m_alias.market_fees)
+
+    @hybrid_property
+    def is_estimate(self):
+        return self.market.market_fees is None
+
+    @is_estimate.expression
+    def is_estimate(cls):
+        return cls._is_estimate_expr()
+
+    @classmethod
     def _cogs_expr(cls):
         return cls._s_alias.cost / cls._s_alias.quantity * cls._m_alias.quantity
 
     @classmethod
     def _revenue_expr(cls):
-        return cls._m_alias.price - cls._m_alias.market_fees
+        return cls._m_alias.price - db.func.ifnull(
+            cls._m_alias.market_fees,
+            cls._m_alias.market_fees_estimate
+        )
 
     @classmethod
     def _profit_expr(cls):
@@ -469,8 +900,11 @@ class Opportunity(db.Model):
 
     @hybrid_property
     def revenue(self):
+        fees = self.market.market_fees if self.market.market_fees is not None\
+            else self.market.price * self.market.vendor.avg_market_fees
+
         try:
-            return quantize(self.market.price - self.market.market_fees)
+            return quantize(self.market.price - fees)
         except TypeError:
             return None
 
@@ -673,7 +1107,7 @@ class Job(db.Model):
     schedule_type = db.Column(db.String(64), nullable=False)
     schedule_kwargs = db.Column(db.JSON)
     task_type = db.Column(db.String(64), nullable=False)
-    task_kwargs = db.Column(db.JSON)
+    task_params = db.Column(db.JSON)
     enabled = db.Column(db.Boolean, default=False)
 
     def __init__(self, *args, **kwargs):
@@ -692,11 +1126,15 @@ class Job(db.Model):
             self.entry = None
 
     def create_scheduler_entry(self):
+        args = self.task_params.get('args', None) if self.task_params else None
+        kwargs = self.task_params.get('kwargs', None) if self.task_params else None
+
         self.entry = RedBeatSchedulerEntry(
             name=self.name,
             task=self.task_type,
             schedule=getattr(schedules, self.schedule_type)(**self.schedule_kwargs),
-            kwargs=self.task_kwargs,
+            args=args,
+            kwargs=kwargs,
             enabled=self.enabled,
             app=celery_app
         )
@@ -727,4 +1165,186 @@ class Job(db.Model):
         db.event.listen(cls, 'after_delete', cls.delete_entry)
 
 
+########################################################################################################################
 
+
+REPORT_TYPES = (
+    '_GET_FLAT_FILE_OPEN_LISTINGS_DATA_',
+    '_GET_MERCHANT_LISTINGS_ALL_DATA_',
+    '_GET_MERCHANT_LISTINGS_DATA_',
+    '_GET_MERCHANT_LISTINGS_INACTIVE_DATA_',
+    '_GET_MERCHANT_LISTINGS_DATA_BACK_COMPAT_',
+    '_GET_MERCHANT_LISTINGS_DATA_LITE_',
+    '_GET_MERCHANT_LISTINGS_DATA_LITER_',
+    '_GET_MERCHANT_CANCELLED_LISTINGS_DATA_',
+    '_GET_CONVERGED_FLAT_FILE_SOLD_LISTINGS_DATA_',
+    '_GET_MERCHANT_LISTINGS_DEFECT_DATA_',
+    '_GET_PAN_EU_OFFER_STATUS_',
+    '_GET_MFN_PAN_EU_OFFER_STATUS_',
+    '_GET_FLAT_FILE_ACTIONABLE_ORDER_DATA_',
+    '_GET_ORDERS_DATA_',
+    '_GET_FLAT_FILE_ORDERS_DATA_',
+    '_GET_CONVERGED_FLAT_FILE_ORDER_REPORT_DATA_',
+    '_GET_FLAT_FILE_ALL_ORDERS_DATA_BY_LAST_UPDATE_',
+    '_GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_',
+    '_GET_XML_ALL_ORDERS_DATA_BY_LAST_UPDATE_',
+    '_GET_XML_ALL_ORDERS_DATA_BY_ORDER_DATE_',
+    '_GET_FLAT_FILE_PENDING_ORDERS_DATA_',
+    '_GET_PENDING_ORDERS_DATA_',
+    '_GET_CONVERGED_FLAT_FILE_PENDING_ORDERS_DATA_',
+    '_GET_SELLER_FEEDBACK_DATA_',
+    '_GET_V1_SELLER_PERFORMANCE_REPORT_',
+    '_GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_',
+    '_GET_V2_SETTLEMENT_REPORT_DATA_XML_',
+    '_GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2_',
+    '_GET_AMAZON_FULFILLED_SHIPMENTS_DATA_',
+    '_GET_FBA_FULFILLMENT_CUSTOMER_SHIPMENT_SALES_DATA_',
+    '_GET_FBA_FULFILLMENT_CUSTOMER_SHIPMENT_PROMOTION_DATA_',
+    '_GET_FBA_FULFILLMENT_CUSTOMER_TAXES_DATA_',
+    '_GET_AFN_INVENTORY_DATA_',
+    '_GET_AFN_INVENTORY_DATA_BY_COUNTRY_',
+    '_GET_FBA_FULFILLMENT_CURRENT_INVENTORY_DATA_',
+    '_GET_FBA_FULFILLMENT_MONTHLY_INVENTORY_DATA_',
+    '_GET_FBA_FULFILLMENT_INVENTORY_RECEIPTS_DATA_',
+    '_GET_RESERVED_INVENTORY_DATA_',
+    '_GET_FBA_FULFILLMENT_INVENTORY_SUMMARY_DATA_',
+    '_GET_FBA_FULFILLMENT_INVENTORY_ADJUSTMENTS_DATA_',
+    '_GET_FBA_FULFILLMENT_INVENTORY_HEALTH_DATA_',
+    '_GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA_',
+    '_GET_FBA_MYI_ALL_INVENTORY_DATA_',
+    '_GET_FBA_FULFILLMENT_CROSS_BORDER_INVENTORY_MOVEMENT_DATA_',
+    '_GET_RESTOCK_INVENTORY_RECOMMENDATIONS_REPORT_',
+    '_GET_FBA_FULFILLMENT_INBOUND_NONCOMPLIANCE_DATA_',
+    '_GET_STRANDED_INVENTORY_UI_DATA_',
+    '_GET_STRANDED_INVENTORY_LOADER_DATA_',
+    '_GET_FBA_INVENTORY_AGED_DATA_',
+    '_GET_EXCESS_INVENTORY_DATA_',
+    '_GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA_',
+    '_GET_FBA_REIMBURSEMENTS_DATA_',
+    '_GET_FBA_FULFILLMENT_CUSTOMER_RETURNS_DATA_',
+    '_GET_FBA_FULFILLMENT_CUSTOMER_SHIPMENT_REPLACEMENT_DATA_',
+    '_GET_FBA_RECOMMENDED_REMOVAL_DATA_',
+    '_GET_FBA_FULFILLMENT_REMOVAL_ORDER_DETAIL_DATA_',
+    '_GET_FBA_FULFILLMENT_REMOVAL_SHIPMENT_DETAIL_DATA_',
+    '_GET_FLAT_FILE_SALES_TAX_DATA_',
+    '_SC_VAT_TAX_REPORT_',
+    '_GET_VAT_TRANSACTION_DATA_',
+    '_GET_XML_BROWSE_TREE_DATA_',
+)
+
+CONDITIONS = (
+    'New', 'NewItem', 'NewWithWarranty', 'NewOEM', 'NewOpenBox',
+    'Used', 'UsedLikeNew', 'UsedVeryGood', 'UsedGood', 'UsedAcceptable', 'UsedPoor', 'UsedRefurbished',
+    'CollectibleLikeNew', 'CollectibleVeryGood', 'CollectibleGood', 'CollectibleAcceptable', 'CollectiblePoor',
+    'Refurbished', 'RefurbishedWithWarranty',
+    'Club',
+    'Unknown'
+)
+
+
+########################################################################################################################
+
+
+class AmzReportLineMixin:
+    report_type = NotImplementedError
+
+    @classmethod
+    def field_names(cls):
+        return db.inspect(cls).columns.keys()
+
+    def iter_fields(self):
+        names = self.field_names()
+        values = map(lambda k: getattr(self, k), names)
+        return zip(names, values)
+
+
+class AmzReport(db.Model, UpdateMixin):
+    """An Amazon report"""
+    id = db.Column(db.Integer, primary_key=True)
+    type = db.Column(db.Enum(*REPORT_TYPES), nullable=False)
+    start_date = db.Column(db.DateTime)
+    end_date = db.Column(db.DateTime)
+    options = db.Column(db.JSON, default={})
+    request_id = db.Column(db.String(64))
+    status = db.Column(db.Enum('_SUBMITTED_', '_IN_PROGRESS_', '_CANCELLED_', '_DONE_', '_DONE_NO_DATA_'))
+    report_id = db.Column(db.String(64))
+    complete = db.Column(db.Boolean, default=False)
+
+    @property
+    def lines(self):
+        if self.type is None:
+            return None
+        try:
+            line_type = [t for t in AmzReportLineMixin.__subclasses__() if t.report_type == self.type][0]
+        except IndexError:
+            raise ValueError(f'Unsupported report type: {self.type}')
+
+        return line_type.query.filter_by(report_id=self.id)
+
+
+########################################################################################################################
+
+
+class FBAManageInventoryReportLine(db.Model, UpdateMixin, AmzReportLineMixin):
+    """A single line on the FBA Manage Inventory report."""
+    report_type = '_GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA_'
+
+    id = db.Column(db.Integer, primary_key=True)
+    report_id = db.Column(db.Integer, db.ForeignKey('amz_report.id', ondelete='CASCADE'), nullable=False)
+    sku = db.Column(db.String(32))
+    fnsku = db.Column(db.String(32))
+    asin = db.Column(db.String(32))
+    product_name = db.Column(db.String(384))
+    condition = db.Column(db.Enum(*CONDITIONS))
+    your_price = db.Column(CURRENCY)
+    mfn_listing_exists = db.Column(db.Boolean)
+    mfn_fulfillable_quantity = db.Column(db.Integer)
+    afn_listing_exists = db.Column(db.Boolean)
+    afn_warehouse_quantity = db.Column(db.Integer)
+    afn_fulfillable_quantity = db.Column(db.Integer)
+    afn_unsellable_quantity = db.Column(db.Integer)
+    afn_reserved_quantity = db.Column(db.Integer)
+    afn_total_quantity = db.Column(db.Integer)
+    per_unit_volume = db.Column(db.Float)
+    afn_inbound_working_quantity = db.Column(db.Integer)
+    afn_inbound_shipped_quantity = db.Column(db.Integer)
+    afn_inbound_receiving_quantity = db.Column(db.Integer)
+
+    report = db.relationship('AmzReport')
+    product = db.relationship(
+        'Product',
+        backref=db.backref('inventory_history', lazy='dynamic'),
+        primaryjoin='Product.sku == FBAManageInventoryReportLine.asin',
+        foreign_keys=asin,
+    )
+
+
+########################################################################################################################
+
+
+class Spider(db.Model):
+    """A spider, used for crawling URLs for a vendor."""
+    id = db.Column(db.Integer, primary_key=True)
+    vendor_id = db.Column(db.Integer, db.ForeignKey('vendor.id', ondelete='CASCADE'), unique=True)
+    name = db.Column(db.String(64), nullable=False, unique=True)
+
+    vendor = db.relationship('Vendor', backref=db.backref('spider', uselist=False))
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._redis = None
+
+    @orm.reconstructor
+    def init_on_load(self):
+        self._redis = None
+
+    @property
+    def redis(self):
+        if self._redis is None:
+            self._redis = redis.from_url(os.environ.get('SCRAPY_REDIS_URL'))
+
+        return self._redis
+
+    def crawl_url(self, url):
+        """Adds :url: to the spiders crawl queue."""
+        self.redis.lpush(self.name + ':start_urls', url)

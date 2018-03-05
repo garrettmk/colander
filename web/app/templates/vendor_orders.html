@@ -1,0 +1,81 @@
+{% extends "secondary_base.html" %}
+
+{% block scripts %}
+    {{ super() }}
+    <script>
+        $(document).ready(function() {
+            setModalFormLauncher('#newOrderBtn', '#newOrderDlg', '{{ url_for('new_vendor_order_form') }}');
+        })
+    </script>
+{% endblock %}
+
+
+{% block modals %}
+    {{ macros.empty_modal('newOrderDlg', 'New Order', 'Create', large=True) }}
+{% endblock %}
+
+
+{% block navbar %}
+    {% set active_tab = 'orders' %}
+    {% include "navbar.html" %}
+{% endblock %}
+
+
+{% block document_tools %}
+    <div class="btn-group btn-group-sm" role="group">
+        <button id="newOrderBtn" class="btn btn-outline-secondary" type="button">
+            <span data-feather="plus"></span>
+            New
+        </button>
+    </div>
+{% endblock %}
+
+
+{% block content %}
+    {% if orders.total %}
+        <table class="table">
+            <thead>
+                <tr>
+                    <th scope="col">Date</th>
+                    <th scope="col">Order number</th>
+                    <th scope="col">Vendor</th>
+                    <th scope="col">Items</th>
+                    <th scope="col">Subtotal</th>
+                    <th scope="col">Sales tax</th>
+                    <th scope="col">Shipping</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for order in orders.items %}
+                <tr>
+                    <td>
+                        {{ moment(order.order_date).format('lll') }}
+                    </td>
+                    <td>
+                        <a href="{{ url_for('vendor_order_details', order_id=order.id) }}">
+                            {{ order.order_number }}
+                        </a>
+                    </td>
+                    <td>
+                        {{ order.vendor.name }}
+                    </td>
+                    <td>
+                        {{ order.items.count() }}
+                    </td>
+                    <td>
+                        {{ as_money(order.subtotal) }}
+                    </td>
+                    <td>
+                        {{ as_money(order.sales_tax) }}
+                    </td>
+                    <td>
+                        {{ as_money(order.shipping) }}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        Press "New" to add orders.
+    {% endif %}
+{% endblock %}

@@ -6,14 +6,13 @@ RUN apt-get update && apt-get install -y supervisor
 ENV PYTHONUNBUFFERED=1 PYTHONPATH=/web/lib/amazonmws FLASK_APP=colander.py
 
 # Development:
-ENTRYPOINT ["supervisord"]
-CMD ["-c", "supervisord.conf"]
-# TODO: Create separate conf files for web-only and worker-only modes
+# ENTRYPOINT ["flask"]
+# CMD ["run", "-h", "0.0.0.0"]
 
 # Web only:
 # ENTRYPOINT ["gunicorn"]
 # CMD ["app:app"]
 
-# Worker only:
-# ENTRYPOINT ["supervisord"]
-# CMD ["-c", "supervisord.conf"]
+# Supervisor:
+#ENTRYPOINT ["supervisord"]
+CMD ["supervisord", "-c", "supervisord_web.conf"]

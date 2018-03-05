@@ -20,12 +20,25 @@
                 };
             });
 
-            getHistory('day');
             $('[data-toggle="popover"]').popover();
+
+            // Show the first tab
+            $('.tab-pane:first').addClass('active show');
         });
 
-        var clipboard = new Clipboard('.clipboard');
+        function editTags() {
+            var tags = $('#editTagsInput').tagsinput('items');
+            $.ajax('{{ url_for('obj_attrs', obj_type='product', obj_id=product.id) }}', {
+                type: 'POST',
+                data: JSON.stringify({tags: tags}),
+                contentType: 'application/json',
+                success: function() {
+                    location.reload();
+                }
+            });
+        }
 
+        var clipboard = new Clipboard('.clipboard');
         var timeFormat = "MMM Do dd YY H:mm";
 
         function newDateString(month, day, year, hours, minutes, seconds) {
@@ -41,8 +54,80 @@
                 .format(timeFormat);
         }
 
+        var activeTask;
+        function reloadOnSuccess() {
+            $.get('/api/results/' + activeTask, function(data) {
+                if (data.status === 'SUCCESS') {
+                    location.reload();
+                } else if (data.status === 'FAILURE') {
+                    window.alert(data.status + ': ' + data.result);
+                } else {
+                    window.setTimeout(reloadOnSuccess, 1000)
+                }
+            });
+        }
+
+        function updateFromVendor() {
+            $.get('/api/ops/products/update_from_vendor?product_id=' + {{ product.id }}, function(task) {
+                activeTask = task.id;
+                reloadOnSuccess();
+            });
+        }
+
+        function guessQuantity() {
+            $.get('/api/ops/products/guess_quantity?product_id=' + {{ product.id }}, function(task) {
+                activeTask = task.id;
+                reloadOnSuccess();
+            })
+        }
+
+        function getAmazonFees() {
+            $.get('/api/ops/products/update_fba_fees?product_id=' + {{ product.id }}, function(task) {
+                activeTask = task.id;
+                reloadOnSuccess();
+            });
+        }
+
+        function addTags(tags) {
+            var allTags = [{% for tag in product.tags %}'{{ tag }}',{% endfor %}];
+            allTags.push(...arguments);
+
+            $.ajax('{{ url_for('obj_attrs', obj_type='product', obj_id=product.id) }}', {
+                type: 'POST',
+                data: JSON.stringify({tags: allTags}),
+                contentType: 'application/json',
+                success: function() {
+                    location.reload();
+                }
+            });
+        }
+
+        function hideSelectedOpps(reason) {
+            var selected = $('.opportunitySelector:checked').map(function() {return $(this).val()}).get();
+            var hide = confirm('Are you sure you want to hide these opportunities?');
+            if (hide) {
+                selected.forEach(function(id) {
+                    $.ajax('/api/opps/' + id, {
+                        type: 'POST',
+                        data: JSON.stringify({hidden: reason}),
+                        contentType: 'application/json',
+                    })
+                });
+
+                location.reload();
+            }
+        }
+
+    </script>
+
+    {% if product.history.count() %}
+    <script>
+        $(document).ready(function() {
+            getHistory('day');
+        });
+
         var ctx = document.getElementById("chart").getContext('2d');
-        var myChart = new Chart(ctx, {
+        var historyChart = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: [],
@@ -89,59 +174,14 @@
             }
         });
 
-        function updateFromVendor() {
-            var refresh_rate = 1000;
-
-            $.get('/api/ops/products/update_from_vendor?product_id=' + {{ product.id }}, function(task) {
-                console.log(task.id);
-                console.log(task.status);
-
-                function reloadOnSuccess() {
-                    console.log('checking...');
-
-                    $.get('/api/results/' + task.id, function(data) {
-                        if (data.status == 'SUCCESS') {
-                            location.reload();
-                        } else if (data.status == 'FAILURE') {
-                            window.alert(data.status + ': ' + data.result);
-                        } else {
-                            window.setTimeout(reloadOnSuccess, refresh_rate)
-                        }
-                    });
-                }
-
-                window.setTimeout(reloadOnSuccess, refresh_rate);
-            });
-        }
-
-        function getAmazonFees() {
-            var refresh_rate = 1000;
-
-            $.get('/api/ops/products/update_fba_fees?product_id=' + {{ product.id }}, function(task) {
-                function reloadOnSuccess() {
-                    $.get('/api/results/' + task.id, function(data) {
-                        if (data.status === 'SUCCESS') {
-                            location.reload();
-                        } else if (data.status === 'FAILURE') {
-                            window.alert(data.status + ': ' + data.result);
-                        } else {
-                            window.setTimeout(reloadOnSuccess, refresh_rate)
-                        }
-                    });
-                }
-
-                window.setTimeout(reloadOnSuccess, refresh_rate);
-            });
-        }
-
         function getHistory(frame) {
             var base_url = '{{ url_for('history', product_id=product.id) }}';
 
             $.get(base_url + '?frame=' + frame, function(data) {
-                myChart.data.labels = data['labels'].map(x => moment(x).format(timeFormat));
-                myChart.data.datasets[0].data = data['rank'];
-                myChart.data.datasets[1].data = data['price'];
-                myChart.update();
+                historyChart.data.labels = data['labels'].map(x => moment(x).format(timeFormat));
+                historyChart.data.datasets[0].data = data['rank'];
+                historyChart.data.datasets[1].data = data['price'];
+                historyChart.update();
             });
 
             var text;
@@ -156,35 +196,142 @@
             $('#historyLengthDrop').html('<span data-feather="calendar"></span> ' + text);
             feather.replace();
         }
+    </script>
+    {% endif %}
 
-        function editTags() {
-            var tags = $('#editTagsInput').tagsinput('items');
-            $.ajax('{{ url_for('obj_attrs', obj_type='products', obj_id=product.id) }}', {
-                type: 'POST',
-                data: JSON.stringify({tags: tags}),
-                contentType: 'application/json',
-                success: function() {
-                    location.reload();
+    {% if product.inventory_history.count() %}
+    <script>
+        $(document).ready(function(){
+            getInvHistory('day');
+        });
+
+        var invContext = document.getElementById('invChart').getContext('2d');
+        var invHistoryChart = new Chart(invContext, {
+            type: 'bar',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Your price',
+                        yAxisID: 'price',
+                        data: [],
+                        backgroundColor: 'rgba(0, 204, 102, 0)',
+                        borderColor: 'rgba(0, 204, 102, 0.5)',
+                        borderWidth: 3,
+                        type: 'line'
+                    },
+                    {
+                        label: 'Fulfillable Qty',
+                        yAxisID: 'qty',
+                        data: [],
+                        backgroundColor: 'rgba(244, 155, 0, .5)',
+                        borderColor: 'rgba(244, 155, 0, 1)',
+                        borderWidth: 0
+                    },
+                    {
+                        label: 'Reserved Qty',
+                        yAxisID: 'qty',
+                        data: [],
+                        backgroundColor: 'rgba(0, 204, 102, .5)',
+                        borderColor: 'rgba(0, 204, 102, 1)',
+                        borderWidth: 0
+                    },
+                    {
+                        label: 'Unsellable',
+                        yAxisID: 'qty',
+                        data: [],
+                        backgroundColor: 'rgba(255, 0, 0, .5)',
+                        borderColor: 'rgba(255, 0, 0, 1)',
+                        borderWidth: 0
+                    },
+                    {
+                        label: 'Inbound',
+                        yAxisID: 'qty',
+                        data: [],
+                        backgroundColor: 'rgba(0, 79, 153, .5)',
+                        borderColor: 'rgba(0, 179, 153, 1)',
+                        borderWidth: 0
+                    },
+                    {
+                        label: 'Receiving',
+                        yAxisID: 'qty',
+                        data: [],
+                        backgroundColor: 'rgba(0, 182, 255, .5)',
+                        borderColor: 'rgba(0, 182, 255, 1)',
+                        borderWidth: 0
+                    },
+                    {
+                        label: 'Working',
+                        yAxisID: 'qty',
+                        data: [],
+                        backgroundColor: 'rgba(114, 147, 140, .5)',
+                        borderColor: 'rgba(114, 147, 140, 1)',
+                        borderWidth: 0
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    xAxes: [
+                        {
+                            stacked: true
+                        }
+                    ],
+                    yAxes: [
+                        {
+                            id: 'qty',
+                            type: 'linear',
+                            position: 'left',
+                            ticks: {
+                                beginAtZero:true
+                            },
+                            stacked: true
+                        },
+                        {
+                            id: 'price',
+                            type: 'linear',
+                            position: 'right',
+                            ticks: {
+                                beginAtZero: true
+                            }
+                        }
+                    ]
                 }
-            });
-        }
-
-        function hideSelectedOpps(reason) {
-            var selected = $('.opportunitySelector:checked').map(function() {return $(this).val()}).get();
-            var hide = confirm('Are you sure you want to hide these opportunities?');
-            if (hide) {
-                selected.forEach(function(id) {
-                    $.ajax('/api/opps/' + id, {
-                        type: 'POST',
-                        data: JSON.stringify({hidden: reason}),
-                        contentType: 'application/json',
-                    })
-                });
-
-                location.reload();
             }
+        });
+
+
+        function getInvHistory(frame) {
+            var base_url = '{{ url_for('inventory', product_id=product.id) }}';
+
+            $.get(base_url + '?frame=' + frame, function(data) {
+                invHistoryChart.data.labels = data['labels'].map(x => moment(x).format(timeFormat));
+                invHistoryChart.data.datasets[0].data = data['price'];
+                invHistoryChart.data.datasets[1].data = data['fulfillable'];
+                invHistoryChart.data.datasets[2].data = data['reserved'];
+                invHistoryChart.data.datasets[3].data = data['unsellable'];
+                invHistoryChart.data.datasets[4].data = data['inbound'];
+                invHistoryChart.data.datasets[5].data = data['receiving'];
+                invHistoryChart.data.datasets[6].data = data['working'];
+                invHistoryChart.update();
+            });
+
+            var text;
+            if (frame === 'day')
+                text = 'Today';
+            else if (frame === 'week')
+                text = 'Past week';
+            else if (frame === 'month')
+                text = 'Past month';
+
+            $('#invHistoryLengthDrop').html('<span data-feather="calendar"></span> ' + text);
+            feather.replace();
         }
     </script>
+    {% endif %}
+
 {% endblock %}
 
 
@@ -231,7 +378,6 @@
                     </h5>
                 </div>
                 <div class="modal-body d-flex flex-row">
-                    <
                 </div>
             </div>
         </div>
@@ -250,9 +396,9 @@
                     </button>
                 </div>
                 <div class="modal-body">
-                    {% if product.data %}
+                    {% if product.extra %}
                         <table class="table">
-                            {% for key, value in product.data.items() %}
+                            {% for key, value in product.extra.items() %}
                                 <tr>
                                     <th scope="row" class="border-0">{{ key }}</th>
                                     <td class="border-0">{{ value }}</td>
@@ -289,7 +435,7 @@
             </button>
             <div class="dropdown-menu dropdown-menu-right">
                 <a class="dropdown-item" href="javascript:updateFromVendor();">Update from vendor</a>
-                <a class="dropdown-item">Find opportunities</a>
+                <a class="dropdown-item" href="{{ google(product.brand, product.model) }}" target="_blank">Google it</a>
             </div>
         </div>
     </div>
@@ -324,6 +470,9 @@
                                     <span class="badge badge-primary">{{ tag }}</span>
                                 {% endfor %}
                             </div>
+                            <a class="text-secondary mr-3" href="javascript:addTags('watch');">
+                                <span data-feather="eye"></span>
+                            </a>
                             <a href="#" class="text-secondary" data-toggle="modal" data-target="#editTagsDlg">
                                 <span data-feather="edit-2"></span>
                             </a>
@@ -387,7 +536,17 @@
                 {% endif %}
                     <tr>
                         <th scope="row">Quantity</th>
-                        <td>{{ product.quantity }} ({{ product.quantity_desc }})</td>
+                        <td class="d-flex flex-row justify-content-start align-items-baseline">
+                            <div class="mr-auto">
+                                {{ product.quantity }} ({{ product.quantity_desc }})
+                            </div>
+                            <a class="text-secondary" href="javascript:guessQuantity();">
+                                <span data-feather="help-circle"></span>
+                            </a>
+                            <a class="text-secondary ml-3" href="#">
+                                <span data-feather="edit-2"></span>
+                            </a>
+                        </td>
                     </tr>
                     <tr>
                         <th scope="row">Brand</th>
@@ -400,7 +559,7 @@
                     <tr>
                         <th scope="row">Data</th>
                         <td>
-                            {% if product.data %}
+                            {% if product.extra %}
                                 <a href="javascript:$('#extraDataDlg').modal('show');">View...</a>
                             {% else %}
                                 None
@@ -416,7 +575,7 @@
         </div>
         <!-- Description -->
         <div class="col-xl-4">
-            <div class="d-block w-100 px-3 py-2" style="overflow-y: scroll; min-height: 100%; max-height: 100%;">
+            <div class="d-block w-100 px-3 py-2" style="overflow-y: scroll; min-height: 100%; max-height: 36rem;">
                 {% if product.description %}
                     {{ product.description|markdown }}
                 {% else %}
@@ -425,37 +584,59 @@
             </div>
         </div>
     </div>
-    <!-- Chart -->
-    {% if history %}
-        <div class="title-section">
-            <span class="subtitle">History</span>
-            <div class="btn-group btn-group-sm" role="group">
-                <div class="btn-group btn-group-sm" role="group">
-                    <button id="historyLengthDrop" type="button" class="btn btn-outline-secondary dropdown-toggle" data-toggle="dropdown">
-                        <span data-feather="calendar"></span>
-                        Today
-                    </button>
-                    <div class="dropdown-menu dropdown-menu-right">
-                        <a class="dropdown-item" onclick="getHistory('day');">Today</a>
-                        <a class="dropdown-item" onclick="getHistory('week');">This week</a>
-                        <a class="dropdown-item" onclick="getHistory('month');">This month</a>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <canvas id="chart" class="w-100 mt-4 mb-5" style="max-height: 36rem;"></canvas>
-    {% endif %}
 
-    <!-- Table of Opportunity -->
-    <div class="title-section">
-        <span class="subtitle">Opportunities:</span>
-        <div class="btn-group btn-group-sm" role="group">
-            <button id="addOpportunityBtn" type="button" class="btn btn-outline-secondary">
-                <span data-feather="plus"></span>
-                Add...
-            </button>
+    <!-- Navigation tabs -->
+    <ul class="nav nav-tabs">
+    {% if product.supply_opportunities.count() %}
+        <li class="nav-item">
+            <a class="nav-link active" data-toggle="tab" href="#tab-supply-opps">
+                Supply Opportunities
+            </a>
+        </li>
+    {% endif %}
+    {% if product.market_opportunities.count() %}
+        <li class="nav-item">
+            <a class="nav-link {% if not product.supply_opportunities.count() %}active{% endif %}" data-toggle="tab" href="#tab-market-opps">
+                Market Opportunities
+            </a>
+        </li>
+    {% endif %}
+    {% if product.history.count() %}
+        <li class="nav-item">
+            <a class="nav-link" data-toggle="tab" href="#tab-chart">
+                History
+            </a>
+        </li>
+    {% endif %}
+    {% if product.order_items.count() %}
+        <li class="nav-item">
+            <a class="nav-link" data-toggle="tab" href="#tab-vendor-orders">
+                Vendor Orders
+            </a>
+        </li>
+    {% endif %}
+    {% if product.supplier_order_items.count() %}
+        <li class="nav-item">
+            <a class="nav-link" data-toggle="tab" href="#tab-supplier-orders">
+                Supplier Orders
+            </a>
+        </li>
+    {% endif %}
+    {% if product.inventory_history.count() %}
+        <li class="nav-item">
+            <a class="nav-link" data-toggle="tab" href="#tab-inventory-history">
+                Inventory
+            </a>
+        </li>
+    {% endif %}
+    </ul>
+    <div class="tab-content h-100">
+
+        <!-- Supply opportunities -->
+        {% if product.supply_opportunities.count() %}
+        <div class="tab-pane fade" id="tab-supply-opps">
             <div class="btn-group btn-group-sm" role="group">
-                <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-toggle="dropdown">
+                <button type="button" class="btn btn-outline-secondary dropdown-toggle mb-3" data-toggle="dropdown">
                     <span data-feather="settings"></span>
                     Action on selected
                 </button>
@@ -466,21 +647,159 @@
                     <a class="dropdown-item" href="javascript:hideSelectedOpps('invalid');">Bad match</a>
                 </div>
             </div>
+            {{ macros.opps_table(product.supply_opportunities, show_market=False) }}
         </div>
+        {% endif %}
+
+        <!-- Market opportunities -->
+        {% if product.market_opportunities.count() %}
+        <div class="tab-pane fade" id="tab-market-opps">
+            <div class="btn-group btn-group-sm" role="group">
+                <button type="button" class="btn btn-outline-secondary dropdown-toggle mb-3" data-toggle="dropdown">
+                    <span data-feather="settings"></span>
+                    Action on selected
+                </button>
+                <div class="dropdown-menu dropdown-menu-right">
+                    <a class="dropdown-item">Tags...</a>
+                    <div class="dropdown-divider"></div>
+                    <a class="dropdown-item" href="javascript:hideSelectedOpps('hidden');">Hide</a>
+                    <a class="dropdown-item" href="javascript:hideSelectedOpps('invalid');">Bad match</a>
+                </div>
+            </div>
+            {{ macros.opps_table(product.market_opportunities, show_supply=False) }}
+        </div>
+        {% endif %}
+
+        <!-- Chart -->
+        {% if product.history.count() %}
+        <div class="tab-pane fade pt-4" id="tab-chart" role="tabpanel">
+            Show history for:
+            <div class="btn-group btn-group-sm" role="group">
+                <button id="historyLengthDrop" type="button" class="btn btn-outline-secondary dropdown-toggle" data-toggle="dropdown">
+                    <span data-feather="calendar"></span>
+                    Today
+                </button>
+                <div class="dropdown-menu dropdown-menu-right">
+                    <a class="dropdown-item" onclick="getHistory('day');">Today</a>
+                    <a class="dropdown-item" onclick="getHistory('week');">This week</a>
+                    <a class="dropdown-item" onclick="getHistory('month');">This month</a>
+                </div>
+            </div>
+            <canvas id="chart" class="w-100 mt-2" style="max-height: 36rem; min-height: 36rem;"></canvas>
+        </div>
+        {% endif %}
+
+        <!-- Vendor orders -->
+        {% if product.order_items.count() %}
+        <div class="tab-pane fade" id="tab-vendor-orders">
+            <table class="table section-table w-100">
+                <thead>
+                    <th scope="col">Date</th>
+                    <th scope="col">Order Number</th>
+                    <th scope="col">Quantity</th>
+                    <th scope="col">Price Each</th>
+                    <th scope="col">Sales Tax</th>
+                    <th scope="col">Shipping</th>
+                    <th scope="col">Unit Cost</th>
+                </thead>
+                <tbody>
+                {% for item in product.order_items.all() %}
+                    <tr>
+                        <td>{{ moment(item.order.order_date).format('MM/DD/YYYY') }}</td>
+                        <td>{{ item.order.order_number }}</td>
+                        <td>{{ as_quantity(item.quantity) }}</td>
+                        <td>{{ as_money(item.price_each) }}</td>
+                        <td>{{ as_money(item.sales_tax / item.total_units) }}</td>
+                        <td>{{ as_money(item.shipping / item.total_units) }}</td>
+                        <td>{{ as_money(item.unit_cost) }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        <!-- Supplier orders -->
+        {% if product.supplier_order_items.count() %}
+        <div class="tab-pane fade" id="tab-supplier-orders">
+            <table class="table section-table w-100">
+                <thead>
+                    <th scope="col">Date</th>
+                    <th scope="col">Order Number</th>
+                    <th scope="col">Vendor</th>
+                    <th scope="col">Quantity</th>
+                    <th scope="col">Cost Each</th>
+                </thead>
+                <tbody>
+                {% for item in product.supplier_order_items.all() %}
+                    <tr>
+                        <td>{{ moment(item.order.order_date).format('MM/DD/YYYY') }}</td>
+                        <td>{{ item.order.order_number }}</td>
+                        <td>{{ item.order.vendor.name }}</td>
+                        <td>{{ as_quantity(item.quantity * item.product.quantity / product.quantity) }}</td>
+                        <td>{{ as_money(item.unit_cost / item.product.quantity * product.quantity) }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        <!-- Inventory history -->
+        {% if product.inventory_history.count() %}
+        <div class="tab-pane fade pt-4" id="tab-inventory-history" role="tabpanel">
+            Show history for:
+            <div class="btn-group btn-group-sm" role="group">
+                <button id="invHistoryLengthDrop" type="button" class="btn btn-outline-secondary dropdown-toggle" data-toggle="dropdown">
+                    <span data-feather="calendar"></span>
+                    Today
+                </button>
+                <div class="dropdown-menu dropdown-menu-right">
+                    <a class="dropdown-item" onclick="getInvHistory('day');">Today</a>
+                    <a class="dropdown-item" onclick="getInvHistory('week');">This week</a>
+                    <a class="dropdown-item" onclick="getInvHistory('month');">This month</a>
+                </div>
+            </div>
+            <canvas id="invChart" class="w-100 mt-2" style="max-height: 36rem; min-height: 36rem;"></canvas>
+        </div>
+        {% endif %}
     </div>
 
-    {% if opps_page.pages %}
-        {% if product.vendor_id == Vendor.get_amazon().id %}
-            {{ macros.opps_table(opps_page.items, show_market=False) }}
-        {% else %}
-            {{ macros.opps_table(opps_page.items, show_supply=False) }}
-        {% endif %}
-
-        {% if opps_page.pages > 1 %}
-            {{ macros.show_pages(opps_page, request.full_path) }}
-        {% endif %}
-    {% else %}
-        This product has no opportunities.
-    {% endif %}
+{#    <!-- Table of Opportunity -->#}
+{#    <div class="title-section mt-5">#}
+{#        <span class="subtitle">Opportunities:</span>#}
+{#        <div class="btn-group btn-group-sm" role="group">#}
+{#            <button id="addOpportunityBtn" type="button" class="btn btn-outline-secondary">#}
+{#                <span data-feather="plus"></span>#}
+{#                Add...#}
+{#            </button>#}
+{#            <div class="btn-group btn-group-sm" role="group">#}
+{#                <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-toggle="dropdown">#}
+{#                    <span data-feather="settings"></span>#}
+{#                    Action on selected#}
+{#                </button>#}
+{#                <div class="dropdown-menu dropdown-menu-right">#}
+{#                    <a class="dropdown-item">Tags...</a>#}
+{#                    <div class="dropdown-divider"></div>#}
+{#                    <a class="dropdown-item" href="javascript:hideSelectedOpps('hidden');">Hide</a>#}
+{#                    <a class="dropdown-item" href="javascript:hideSelectedOpps('invalid');">Bad match</a>#}
+{#                </div>#}
+{#            </div>#}
+{#        </div>#}
+{#    </div>#}
+{##}
+{#    {% if opps_page.pages %}#}
+{#        {% if product.vendor_id == Vendor.get_amazon().id %}#}
+{#            {{ macros.opps_table(opps_page.items, show_market=False) }}#}
+{#        {% else %}#}
+{#            {{ macros.opps_table(opps_page.items, show_supply=False) }}#}
+{#        {% endif %}#}
+{##}
+{#        {% if opps_page.pages > 1 %}#}
+{#            {{ macros.show_pages(opps_page, request.full_path) }}#}
+{#        {% endif %}#}
+{#    {% else %}#}
+{#        This product has no opportunities.#}
+{#    {% endif %}#}
 
 {% endblock %}

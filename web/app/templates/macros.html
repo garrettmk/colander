@@ -206,11 +206,17 @@
                         <div class="row no-gutters w-100 justify-content-around align-items-center p-1">
                             <div class="col-xs col-sm-2 col-xl d-flex justify-content-between align-items-center m-1" style="border-bottom: 1px solid rgba(0,0,0,0.15);">
                                 <span class="d-block mr-2" data-feather="corner-down-left"></span>
+                                {% if opp.is_estimate %}
+                                    <span class="text-muted">? </span>
+                                {% endif %}
                                 <span>{{ as_percent(opp.roi) }}</span>
                             </div>
                             <div class="w-100 d-xs-block d-sm-none d-xl-block"></div>
                             <div class="col-xs col-sm-2 col-xl d-flex justify-content-between align-items-center m-1" style="border-bottom: 1px solid rgba(0,0,0,0.15);">
                                 <span class="d-block mr-2" data-feather="dollar-sign"></span>
+                                {% if opp.is_estimate %}
+                                    <span class="text-muted">? </span>
+                                {% endif %}
                                 <span>{{ as_money(opp.profit) }}</span>
                             </div>
                             <div class="w-100 d-xs-block d-sm-none d-xl-block"></div>

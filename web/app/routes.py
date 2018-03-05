@@ -7,8 +7,9 @@ from flask_login import current_user, login_user, logout_user, login_required
 
 from app import app, db, celery_app
 from app.forms import LoginForm, EditVendorForm, EditQuantityMapForm, EditProductForm, SearchProductsForm, EditJobForm,\
-    SearchOpportunitiesForm, AddOpportunityForm
-from app.models import User, Vendor, QuantityMap, Product, Opportunity, Job, ProductHistory
+    SearchOpportunitiesForm, AddOpportunityForm, EditVendorOrderForm, EditVendorOrderItemForm, ReportForm
+from app.models import User, Vendor, QuantityMap, Product, Opportunity, Job, ProductHistory, VendorOrder,\
+    VendorOrderItem, Delivery, AmzReport, AmzReportLineMixin, FBAManageInventoryReportLine
 
 from celery import chain, chord
 from celery.result import AsyncResult
@@ -117,14 +118,9 @@ def redis_info(section):
 @login_required
 def obj_attrs(obj_type, obj_id, attr=None):
     """Set or get attributes on an arbitrary object."""
-    types = {
-        'vendors': Vendor,
-        'products': Product,
-        'qmaps': QuantityMap,
-        'history': ProductHistory,
-        'opps': Opportunity,
-        'jobs': Job
-    }
+    type_ = {
+        t.__name__.lower(): t for t in db.Model.__subclasses__()
+    }[obj_type.lower()]
 
     def failure(e):
         return jsonify(
@@ -139,7 +135,7 @@ def obj_attrs(obj_type, obj_id, attr=None):
         )
 
     try:
-        obj = types[obj_type].query.filter_by(id=obj_id).first_or_404()
+        obj = type_.query.filter_by(id=obj_id).first_or_404()
     except KeyError:
         return failure(f'Invalid object type: {obj_type}')
     except Exception as e:
@@ -159,6 +155,20 @@ def obj_attrs(obj_type, obj_id, attr=None):
             return failure(e)
 
         return success(**{attr: value})
+
+
+@app.route('/api/<string:obj_type>/<int:obj_id>/delete', methods=['POST'])
+@login_required
+def obj_delete(obj_type, obj_id):
+    """Delete an object from the database."""
+    type_ = {
+        t.__name__.lower(): t for t in db.Model.__subclasses__()
+    }[obj_type.lower()]
+
+    obj = type_.query.filter_by(id=obj_id).first_or_404()
+    db.session.delete(obj)
+    db.session.commit()
+    return jsonify(status='ok')
 
 
 ########################################################################################################################
@@ -318,10 +328,12 @@ def delete_quantity_map():
 @login_required
 def products():
     """Render the top-level Products index page."""
+    print(f'{request.args}')
     search_form = SearchProductsForm(request.args)
     search_form.tags.choices = [(tag, tag) for tag in request.args.getlist('tags')]
 
     products = Product.build_query(
+        *[arg for arg, value in request.args.items() if value == ''],
         query=request.args.get('query'),
         tags=request.args.getlist('tags'),
         vendor_id=request.args.get('vendor_id', type=int)
@@ -374,7 +386,7 @@ def new_product_form():
     return render_template('forms/product.html', title='New Product', form=form)
 
 
-@app.route('/products/<product_id>')
+@app.route('/products/<int:product_id>')
 @login_required
 def product_details(product_id):
     """Display a product's detail page."""
@@ -457,7 +469,7 @@ def tag_products():
     return jsonify(status='ok')
 
 
-@app.route('/products/<product_id>/addopp', methods=['GET', 'POST'])
+@app.route('/products/<int:product_id>/addopp', methods=['GET', 'POST'])
 def add_opportunity_form(product_id):
     """Adds a supplier or market relationship to a product."""
     product = Product.query.filter_by(id=product_id).first_or_404()
@@ -477,7 +489,7 @@ def add_opportunity_form(product_id):
     return render_template('forms/add_opportunity.html', form=form)
 
 
-@app.route('/products/<product_id>/history')
+@app.route('/products/<int:product_id>/history')
 def history(product_id):
     """Return history data for a given product."""
     frame = request.args.get('frame', 'day')
@@ -501,6 +513,51 @@ def history(product_id):
         'labels': [h.timestamp for h in history],
         'rank': [h.rank for h in history],
         'price': [float(h.price) for h in history]
+    })
+
+
+@app.route('/products/<int:product_id>/inventory')
+def inventory(product_id):
+    """Return inventory history data for a given product."""
+    product = Product.query.filter_by(id=product_id).first_or_404()
+    frame = request.args.get('frame', 'day')
+    start = datetime.datetime.utcnow()
+
+    if frame == 'day':
+        start -= datetime.timedelta(days=1)
+    elif frame == 'week':
+        start -= datetime.timedelta(weeks=1)
+    elif frame == 'month':
+        start -= datetime.timedelta(days=31)
+    else:
+        raise ValueError(f'Invalid value for frame: {frame}')
+
+    history = db.session.query(
+        AmzReport.end_date,
+        FBAManageInventoryReportLine.afn_fulfillable_quantity,
+        FBAManageInventoryReportLine.afn_reserved_quantity,
+        FBAManageInventoryReportLine.afn_unsellable_quantity,
+        FBAManageInventoryReportLine.afn_inbound_shipped_quantity,
+        FBAManageInventoryReportLine.afn_inbound_receiving_quantity,
+        FBAManageInventoryReportLine.afn_inbound_working_quantity,
+        FBAManageInventoryReportLine.your_price
+    ).filter(
+        FBAManageInventoryReportLine.asin == product.sku,
+        AmzReport.id == FBAManageInventoryReportLine.report_id,
+        AmzReport.end_date >= start
+    ).order_by(
+        AmzReport.end_date.asc()
+    ).all()
+
+    return jsonify({
+        'labels': [h[0] for h in history],
+        'fulfillable': [h[1] for h in history],
+        'unsellable': [h[2] for h in history],
+        'reserved': [h[3] for h in history],
+        'inbound': [h[4] for h in history],
+        'receiving': [h[5] for h in history],
+        'working': [h[6] for h in history],
+        'price': [float(h[7]) for h in history]
     })
 
 
@@ -574,7 +631,7 @@ def new_job_form():
             schedule_kwargs=ast.literal_eval(form.schedule_kwargs.data),
             enabled=form.enabled.data,
             task_type=form.task.data,
-            task_kwargs=ast.literal_eval(form.task_kwargs.data)
+            task_params=ast.literal_eval(form.task_params.data)
         )
 
         db.session.add(job)
@@ -607,7 +664,7 @@ def edit_job_form(job_id):
         job.schedule_type = form.schedule_type.data
         job.schedule_kwargs = ast.literal_eval(form.schedule_kwargs.data)
         job.task_type = form.task.data
-        job.task_kwargs = ast.literal_eval(form.task_kwargs.data)
+        job.task_params = ast.literal_eval(form.task_params.data)
         job.enabled = form.enabled.data
         db.session.commit()
         flash(f'Changes saved')
@@ -617,7 +674,7 @@ def edit_job_form(job_id):
         form.schedule_type.data = job.schedule_type
         form.schedule_kwargs.data = job.schedule_kwargs
         form.task.data = job.task_type
-        form.task_kwargs.data = job.task_kwargs
+        form.task_params.data = job.task_params
         form.enabled.data = job.enabled
 
     return render_template('forms/job.html', title='Edit Job', form=form)
@@ -634,6 +691,7 @@ def delete_job():
 
 
 @app.route('/jobs/control', methods=['POST'])
+@login_required
 def control_jobs():
     action = request.form['action']
 
@@ -655,10 +713,168 @@ def control_jobs():
 
 
 @app.route('/jobs/schedule')
+@login_required
 def jobs_schedule():
     scheduler = RedBeatScheduler(app=celery_app)
     return render_template(
         'jobs_schedule.html',
         schedule=scheduler.schedule.values(),
         now=datetime.datetime.utcnow()
+    )
+
+
+########################################################################################################################
+# Vendor orders
+
+
+@app.route('/vendororders')
+@login_required
+def vendor_orders():
+    orders = VendorOrder.query.paginate(per_page=app.config['MAX_PAGE_ITEMS'])
+    return render_template(
+        'vendor_orders.html',
+        title='Vendor Orders',
+        orders=orders
+    )
+
+
+@app.route('/vendororders/<int:order_id>')
+@login_required
+def vendor_order_details(order_id):
+    order = VendorOrder.query.filter_by(id=order_id).first_or_404()
+
+    return render_template(
+        'vendor_order_details.html',
+        title='Order Details',
+        order=order
+    )
+
+
+@app.route('/vendororders/create', methods=['GET', 'POST'])
+@login_required
+def new_vendor_order_form():
+    form = EditVendorOrderForm()
+    if form.validate_on_submit():
+        order = VendorOrder()
+        form.populate_obj(order)
+        db.session.add(order)
+        db.session.commit()
+        flash(f'Vendor order {order.order_number} created.')
+        return jsonify(status='ok')
+
+    return render_template('forms/vendororder.html', form=form)
+
+
+@app.route('/vendororders/<int:order_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_vendor_order_form(order_id):
+    order = VendorOrder.query.filter_by(id=order_id).first_or_404()
+    form = EditVendorOrderForm(obj=order)
+
+    if form.validate_on_submit():
+        form.populate_obj(order)
+        db.session.commit()
+        return jsonify(status='ok')
+
+    return render_template(
+        'forms/vendororder.html',
+        form=form
+    )
+
+
+@app.route('/vendororders/<int:order_id>/additem', methods=['GET', 'POST'])
+@login_required
+def new_vendor_order_item_form(order_id):
+    order = VendorOrder.query.filter_by(id=order_id).first_or_404()
+    form = EditVendorOrderItemForm(order=order)
+
+    if form.validate_on_submit():
+        product_id = Product.query.filter_by(vendor_id=order.vendor_id, sku=form.sku.data).first().id
+        item = VendorOrderItem(
+            order_id=order.id,
+            product_id=product_id,
+            quantity=form.quantity.data,
+            price_each=form.price_each.data,
+        )
+        db.session.add(item)
+        db.session.commit()
+        return jsonify(status='ok')
+
+    form.vendor_id.data = order.vendor_id
+    return render_template(
+        'forms/vendor_order_item_form.html',
+        form=form
+    )
+
+
+@app.route('/vendororders/items/<int:item_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_vendor_order_item_form(item_id):
+    item = VendorOrderItem.query.filter_by(id=item_id).first_or_404()
+    form = EditVendorOrderItemForm(obj=item)
+
+    if form.validate_on_submit():
+        form.populate_obj(item)
+        db.session.commit()
+        return jsonify(status='ok')
+
+    form.vendor_id.data = item.order.vendor_id
+    form.sku.data = item.product.sku
+
+    return render_template(
+        'forms/vendor_order_item_form.html',
+        form=form
+    )
+
+
+########################################################################################################################
+# Reports
+
+
+@app.route('/reports')
+@login_required
+def reports():
+    page_num = request.args.get('page', 1, type=int)
+
+    reports = AmzReport.query.order_by(
+        AmzReport.id.desc()
+    ).paginate(
+        page_num,
+        app.config['MAX_PAGE_ITEMS'],
+        False
+    )
+
+    return render_template(
+        'reports.html',
+        title='Reports',
+        reports=reports
+    )
+
+
+@app.route('/reports/<int:report_id>')
+@login_required
+def report_details(report_id):
+    report = AmzReport.query.filter_by(id=report_id).first_or_404()
+
+    return render_template(
+        'report_details.html',
+        title='Report Details',
+        report=report
+    )
+
+
+@app.route('/reports/create', methods=['GET', 'POST'])
+@login_required
+def new_report_form():
+    form = ReportForm()
+    if form.validate_on_submit():
+        report = AmzReport()
+        form.populate_obj(report)
+        db.session.add(report)
+        db.session.commit()
+        return jsonify(status='ok')
+
+    return render_template(
+        'forms/report.html',
+        form=form
     )

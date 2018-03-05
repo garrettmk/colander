@@ -1,0 +1,88 @@
+{% extends "secondary_base.html" %}
+
+
+{% block scripts %}
+    {{ super() }}
+    <script>
+        $(document).ready(function() {
+            setModalFormLauncher('#newReportBtn', '#newReportDlg', '{{ url_for('new_report_form') }}')
+        });
+    </script>
+{% endblock %}
+
+
+{% block modals %}
+    {{ macros.empty_modal('newReportDlg', 'Request Report', 'Ok') }}
+{% endblock %}
+
+
+{% block navbar %}
+    {% set active_tab = 'reports' %}
+    {% include "navbar.html" %}
+{% endblock %}
+
+
+{% block document_tools %}
+    <button id="newReportBtn" type="button" class="btn btn-sm btn-outline-secondary">
+        New
+    </button>
+{% endblock %}
+
+
+{% block content %}
+    {% if reports.items %}
+        <table class="table section-table">
+            <thead>
+                <tr>
+                    <th>Report Type</th>
+                    <th>Start Date</th>
+                    <th>End Date</th>
+                    <th>Options</th>
+                    <th>Request ID</th>
+                    <th>Status</th>
+                    <th>Report ID</th>
+                    <th>Lines</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for report in reports.items %}
+                <tr>
+                    <td>{{ report.type }}</td>
+                    <td>
+                    {% if report.start_date %}
+                        {{ moment(report.start_date).format('lll') }}
+                    {% else %}
+                        N/A
+                    {% endif %}
+                    </td>
+                    <td>
+                    {% if report.end_date %}
+                        {{ moment(report.end_date).format('lll') }}
+                    {% else %}
+                        N/A
+                    {% endif %}
+                    </td>
+                    <td>{{ report.options }}</td>
+                    <td>{{ report.request_id or 'N/A' }}</td>
+                    <td>{{ report.status or 'N/A' }}</td>
+                    <td>{{ report.report_id or 'N/A' }}</td>
+                    <td>
+                    {% if report.lines %}
+                        <a href="{{ url_for('report_details', report_id=report.id) }}">
+                            {{ as_quantity(report.lines.count()) }}
+                        </a>
+                    {% else %}
+                        N/A
+                    {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% if reports.pages > 1 %}
+            {{ macros.show_pages(reports, url_for('reports')) }}
+        {% endif %}
+    {% else %}
+        Press "New" to add reports.
+    {% endif %}
+{% endblock %}

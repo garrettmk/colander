@@ -36,6 +36,19 @@ services:
     env_file:
       - web/.env
 
+  workers:
+    build:
+      context: web
+      dockerfile: Dockerfile.worker
+    volumes:
+      - ./web:/web
+    depends_on:
+      - redis
+      - database
+      - web
+    env_file:
+      - web/.env
+
   spiders:
     build:
       context: spiders
@@ -51,8 +64,8 @@ services:
       - redis
       - database
     environment:
-      - SPIDERS_MAX_ITEMS=1000
-      - DOWNLOAD_DELAY=0
+      - SPIDERS_MAX_ITEMS=0
+      - DOWNLOAD_DELAY=5
     env_file:
       - ./web/.env
     ports:

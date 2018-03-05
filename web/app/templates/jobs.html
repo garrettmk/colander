@@ -21,8 +21,8 @@
             });
 
 
-            updateSchedule();
-            window.setInterval(updateSchedule, 5000);
+            {#updateSchedule();#}
+            {#window.setInterval(updateSchedule, 5000);#}
         });
 
         function deleteJob(jobId) {
@@ -34,12 +34,12 @@
             }
         };
 
-        function updateSchedule() {
-            $.get('{{ url_for('jobs_schedule') }}', function(data) {
-                $('#scheduleArea').html(data);
-                flask_moment_render_all();
-            });
-        }
+        {#function updateSchedule() {#}
+        {#    $.get('{{ url_for('jobs_schedule') }}', function(data) {#}
+        {#        $('#scheduleArea').html(data);#}
+        {#        flask_moment_render_all();#}
+        {#    });#}
+        {#}#}
 
     </script>
 {% endblock %}
@@ -70,9 +70,9 @@
 
 
 {% block content %}
-    <div id="scheduleArea" class="w-100 mb-5">
-        <!-- Schedule -->
-    </div>
+{#    <div id="scheduleArea" class="w-100 mb-5">#}
+{#        <!-- Schedule -->#}
+{#    </div>#}
     <div class="d-flex flex-row flex-wrap align-items-stretch w-100 mb-3">
         {% for job in jobs.items %}
             <div class="card mr-2 mb-2" style="width: 18rem;">

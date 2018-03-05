@@ -10,13 +10,16 @@ from celery.utils.log import get_task_logger
 from celery import group, chain, chord
 
 from app import db
-from app.models import Vendor, Product, QuantityMap, Opportunity, ProductHistory
+from app.models import Vendor, Product, QuantityMap, Opportunity, ProductHistory, AmzReportLineMixin, AmzReport,\
+    FBAManageInventoryReportLine
 
 from sqlalchemy import func
 
 from tasks.parsed.products import ListMatchingProducts, GetCompetitivePricingForASIN, GetMyFeesEstimate
 from tasks.parsed.product_adv import ItemLookup
 from tasks.parsed.inventory import ListInventorySupply
+
+from urllib.parse import urlparse
 
 logger = get_task_logger(__name__)
 
@@ -45,36 +48,19 @@ def clean_and_import(self, data):
     sku = data.pop('sku')
 
     # Try to locate the product in the database
-    vendor_name = data.pop('vendor', None)
     vendor_id = data.pop('vendor_id', None)
-
-    # If vendor_name was provided, find or create the matching Vendor
-    if vendor_name:
-        vendor = Vendor.query.filter_by(name=vendor_name).first()
-        if vendor is None:
-            vendor = Vendor(name=vendor_name)
-            db.session.add(vendor)
-    elif vendor_id:
-        vendor = Vendor.query.filter_by(id=vendor_id).first()
-        if vendor is None:
-            raise ValueError(f'Invalid vendor id: {vendor_id}')
-    else:
-        raise ValueError('Either \'vendor\' or \'vendor_id\' fields are required.')
+    if vendor_id is None:
+        netloc = urlparse(data['detail_url'])[1]
+        vendor = Vendor.query.filter(Vendor.website.ilike(f'%{netloc}%')).one()
+        vendor_id = vendor.id
 
     # Find a matching product in the db or create a new one
-    product = Product.query.filter_by(vendor=vendor, sku=sku).first()
+    product = Product.query.filter_by(vendor_id=vendor_id, sku=sku).first()
     if product is None:
-        product = Product(vendor=vendor, sku=sku)
-        db.session.add(product)
+        product = Product(vendor_id=vendor_id, sku=sku)
 
-    # Update the product fields
-    for key in list(data.keys()):
-        if hasattr(product, key):
-            setattr(product, key, data.pop(key))
-
-    # Leftovers go in the data field
-    product.data = data
-
+    product.update(data)
+    db.session.add(product)
     db.session.commit()
 
     # Try to determine listing quantity
@@ -84,12 +70,13 @@ def clean_and_import(self, data):
 ########################################################################################################################
 
 
-@celery_app.task(bind=True, base=OpsTask)
+@celery_app.task(bind=True, base=OpsTask, ignore_result=True)
 def guess_quantity(self, product_id):
     """Guess listing quantity based on QuantityMap data."""
     product = Product.query.filter_by(id=product_id).first()
     if product is None:
         raise ValueError(f'Invalid product id: {product_id}')
+    product.suppress_guessing = True
 
     # If quantity and quantity_desc are present, update the QuantityMap table
     if product.quantity and product.quantity_desc:
@@ -120,7 +107,7 @@ def guess_quantity(self, product_id):
                 product.quantity = qmap.quantity
                 break
         else:
-            data = product.data if product.data is not None else {}
+            data = product.extra if product.extra is not None else {}
             quantity = max(data.get('PackageQuantity', 0), data.get('NumberOfItems', 0))
             if quantity:
                 product.quantity = quantity
@@ -132,7 +119,7 @@ def guess_quantity(self, product_id):
 ########################################################################################################################
 
 
-@celery_app.task(bind=True, base=OpsTask)
+@celery_app.task(bind=True, base=OpsTask, ignore_result=True)
 def quantity_map_updated(self, qmap_id):
     """Updates all related products with new quantity map data."""
     qmap = QuantityMap.query.filter_by(id=qmap_id).first()
@@ -179,10 +166,10 @@ def find_amazon_matches(self, product_id):
         match_product = Product.query.filter_by(vendor_id=amazon.id, sku=match_data['sku']).first()
         if match_product is None:
             match_product = Product(vendor=amazon, sku=match_data['sku'])
-            db.session.add(match_product)
 
         match_product.update(match_data)
-        opp = match_product.add_supplier(product)
+        match_product.add_supplier(product)
+        db.session.add(match_product)
         db.session.commit()
 
         # Follow-up tasks:
@@ -236,10 +223,9 @@ def update_amazon_listing(self, data, product_id):
             except TypeError:
                 pass
 
-            if product.data is not None:
-                product.data['offers'] = api_results.get('offers', None)
-            else:
-                product.data = {'offers': api_results.get('offers', None)}
+            offers = api_results.get('offers', None)
+            if offers is not None:
+                product.update(offers=offers)
 
         elif call_type == 'GetMyFeesEstimate':
             product.price = api_results['price']
@@ -286,21 +272,31 @@ def store_product_history(self, product_id):
     db.session.commit()
 
 
-@celery_app.task(bind=True, base=OpsTask)
-def get_inventory(self, tags=['inventory']):
+@celery_app.task(bind=True, base=OpsTask, ignore_result=True)
+def get_inventory(self):
     """Retrieve inventory from Amazon."""
-    results = ListInventorySupply(priority=self.get_priority())['results']
-    amazon = Vendor.get_amazon()
+    lines = FBAManageInventoryReportLine.query.filter(
+        FBAManageInventoryReportLine.report_id == db.select([
+            AmzReport.id
+        ]).where(
+            db.and_(
+                AmzReport.type == FBAManageInventoryReportLine.report_type,
+                AmzReport.status == '_DONE_'
+            )
+        ).order_by(
+            AmzReport.start_date.desc()
+        ).limit(1)
+    ).all()
 
-    for result in results:
-        product = Product.query.filter_by(vendor_id=amazon.id, sku=result['sku']).first()
-        if product is None:
-            product = Product(vendor_id=amazon.id, sku=result['sku'])
+    for line in lines:
+        if line.product is None:
+            product = Product(vendor_id=Vendor.get_amazon().id, sku=line.asin)
             db.session.add(product)
 
-        product.update(result)
-        product.add_tags(*tags)
-        db.session.commit()
+    db.session.commit()
+
+    for product in (line.product for line in lines):
+        update_from_vendor.delay(product.id)
 
 
 @celery_app.task(bind=True, base=OpsTask)
@@ -319,5 +315,9 @@ def update_from_vendor(self, product_id):
             ),
             update_fba_fees.s()
         ).apply_async()
+    elif product.vendor.spider:
+        if not product.detail_url:
+            raise ValueError(f'detail_url required to update from this vendor.')
+        product.vendor.spider.crawl_url(product.detail_url)
     else:
         raise ValueError(f'Can\'t update from vendor: {product.vendor.name}')

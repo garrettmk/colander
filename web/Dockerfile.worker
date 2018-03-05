@@ -1,9 +1,9 @@
 FROM python:latest
-ADD supervisord.conf /
 WORKDIR /web
-ADD ../web /web
+ADD . /web
 RUN pip install -r requirements.txt
-ENV PYTHONUNBUFFERED=0 PYTHONPATH=/web/lib FLASK_APP=colander.py
 RUN apt-get update && apt-get install -y supervisor
-ENTRYPOINT ["supervisord"]
-CMD ["-c", "supervisord.conf"]
+ENV PYTHONUNBUFFERED=0 PYTHONPATH=/web/lib/amazonmws
+
+#ENTRYPOINT ["supervisord"]
+CMD ["supervisord", "-c", "supervisord_worker.conf"]

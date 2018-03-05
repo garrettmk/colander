@@ -24,7 +24,7 @@
                         Search
                     </a>
                     <div class="dropdown-divider"></div>
-                    <a class="dropdown-item" href="{{ url_for('products', tags=['inventory']) }}">
+                    <a class="dropdown-item" href="{{ url_for('products') + '?inventory' }}">
                         <span data-feather="package"></span>
                         Inventory
                     </a>
@@ -59,9 +59,19 @@
                     Jobs
                 </a>
             </li>
-            <li class="nav-item mr-auto">
+            <li class="nav-item">
                 <a class="nav-link {% if active_tab == 'quantity_maps' %}active{% endif %}" href="{{ url_for('quantity_maps') }}">
                     Quantity Maps
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if active_tab == 'orders' %}active{% endif %}" href="{{ url_for('vendor_orders') }}">
+                    Orders
+                </a>
+            </li>
+            <li class="nav-item mr-auto">
+                <a class="nav-link {% if active_tab == 'reports' %}active{% endif %}" href="{{ url_for('reports') }}">
+                    Reports
                 </a>
             </li>
         </ul>

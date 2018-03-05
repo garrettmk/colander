@@ -1,0 +1,8 @@
+{% import "macros.html" as macros %}
+<form id="reportForm" action="" method="post">
+    {{ form.hidden_tag() }}
+    {{ macros.form_field(form.type) }}
+    {{ macros.form_field(form.start_date) }}
+    {{ macros.form_field(form.end_date) }}
+{#    {{ macros.form_field(form.options) }}#}
+</form>

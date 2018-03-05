@@ -91,7 +91,7 @@ mws_priority_limits = {
 
 class MWSTask(celery_app.Task):
     """Common behaviors for all MWS API calls."""
-    cache_ttl = 30
+    cache_ttl = None
     soft_time_limit = 30
     pending_expires = 200
     restore_rate_adjust = 0
@@ -124,7 +124,7 @@ class MWSTask(celery_app.Task):
         """Initialize the task object."""
         # Set up database connections here
         self.api = None
-        self.redis = redis.from_url(os.environ.get('REDIS_URL', 'redis://'))
+        self.redis = redis.from_url(os.environ.get('CELERY_REDIS_URL', 'redis://'))
         self._credentials = {
             'access_key': os.environ.get('MWS_ACCESS_KEY', 'test_access_key'),
             'secret_key': os.environ.get('MWS_SECRET_KEY', 'test_secret_key'),

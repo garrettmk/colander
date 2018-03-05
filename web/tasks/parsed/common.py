@@ -9,7 +9,7 @@ from app import celery_app
 
 def format_parsed_response(action, params, results=None, errors=None, succeeded=None):
     if succeeded is None:
-        succeeded = True if errors else False
+        succeeded = True if errors is None or not len(errors) else False
 
     return {
         'action': action,

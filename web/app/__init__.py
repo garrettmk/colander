@@ -56,7 +56,6 @@ class FlaskCelery(celery.Celery):
                     **kwargs
                 )
 
-
         self.Task = ContextTask
 
         if app is not None:
@@ -70,6 +69,9 @@ class FlaskCelery(celery.Celery):
             {
                 'tasks.jobs.*': {
                     'queue': 'medium'
+                },
+                'tasks.ops.products.clean_and_import': {
+                    'queue': 'spiders'
                 }
             }
         ]
