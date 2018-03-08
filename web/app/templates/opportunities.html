@@ -9,7 +9,7 @@
             var hide = confirm('Are you sure you want to hide these opportunities?');
             if (hide) {
                 selected.forEach(function(id) {
-                    $.ajax('/api/opps/' + id, {
+                    $.ajax('/api/opportunity/' + id, {
                         type: 'POST',
                         data: JSON.stringify({hidden: reason}),
                         contentType: 'application/json',

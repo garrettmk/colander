@@ -25,7 +25,10 @@ class KatomProductLoader(ItemLoader):
     title_out = Join()
 
     def sku_in(self, input):
-        return self.re_sku.search(input[0]).group(1)
+        try:
+            return self.re_sku.search(input[0]).group(1)
+        except:
+            return None
 
     def model_in(self, input):
         try:
@@ -62,7 +65,8 @@ class KatomSpider(RedisSpider):
             formdata={'email': 'prwlrspider@gmail.com',
             'password': 'foofoo17'},
             callback=self.after_login,
-            meta={'start_url': response.url}
+            meta={'start_url': response.url},
+            dont_filter=True
         )
 
     def after_login(self, response):

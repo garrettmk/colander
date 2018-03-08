@@ -15,6 +15,9 @@ class Config:
     task_store_errors_even_if_ignored = True
     task_compression = 'gzip'
     result_compression = 'gzip'
+    # worker_max_memory_per_child = os.environ.get('WORKER_MAX_MEMORY', 10*1024)
+    # CELERYD_MAX_TASKS_PER_CHILD = os.environ.get('WORKER_MAX_TASKS', None)
+    CELERYD_POOL_RESTARTS = True
     CELERY_IMPORTS = [
         'tasks.mws.products',
         'tasks.mws.product_adv',
